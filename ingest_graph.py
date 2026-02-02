@@ -13,9 +13,6 @@ load_dotenv()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "medicine_embeddings")
 
-# -----------------------------------------------------------------------------
-# Utility parsing helpers
-# -----------------------------------------------------------------------------
 
 def parse_active_ingredients(raw: str) -> list[str]:
     if not isinstance(raw, str) or not raw.strip():
@@ -119,10 +116,6 @@ def extract_conditions(uses_text: str) -> list[str]:
             norm.append(c)
     return norm[:12]  # limit to avoid explosion
 
-# -----------------------------------------------------------------------------
-# Neo4j Loader
-# -----------------------------------------------------------------------------
-
 def get_driver():
     uri = os.getenv('NEO4J_URI')
     user = os.getenv('NEO4J_USER')
@@ -188,10 +181,6 @@ MATCH (i:ActiveIngredient)<-[:CONTAINS_INGREDIENT]-(m1:Medicine), (i)<-[:CONTAIN
 WHERE id(m1) < id(m2)
 MERGE (m1)-[:INTERACTS_WITH {basis:'shared_ingredient', ingredient: i.name}]->(m2)
 """
-
-# -----------------------------------------------------------------------------
-# Main ingestion logic
-# -----------------------------------------------------------------------------
 
 def build_embedding_text(row: pd.Series) -> str:
     parts = [str(row.get('Medicine Name','')), str(row.get('Composition','')), str(row.get('Uses','')), str(row.get('Side_effects','')), str(row.get('Manufacturer',''))]
@@ -259,9 +248,6 @@ def ingest(csv_path: str, limit: int | None = None, clear: bool = False):
     print("Ingestion complete.")
     print(f"Loaded {len(df)} medicines. Vector index: {VECTOR_INDEX_NAME}")
 
-# -----------------------------------------------------------------------------
-# CLI
-# -----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Ingest medicine CSV into Neo4j graph")

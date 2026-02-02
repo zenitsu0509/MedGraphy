@@ -1,9 +1,11 @@
-streamlit
 python-dotenv
 neo4j
 groq
 pandas
-streamlit-agraph
+streamlit
 langchain_community
 sentence-transformers
 faiss-cpu
+transformers
+tqdm
+boto3
