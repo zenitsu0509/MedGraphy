@@ -9,3 +9,6 @@ faiss-cpu
 transformers
 tqdm
 boto3
+altair<5
+protobuf
+numpy<2
