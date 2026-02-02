@@ -385,11 +385,15 @@ Neo4j: {NEO4J_URI}
         st.error("❌ Neo4j Connection Failed")
     st.info("✅ FAISS loaded from S3")
 
+# Initialize session state for query
+if 'current_query' not in st.session_state:
+    st.session_state.current_query = ""
+
 # Main query input
 query = st.text_input(
     "Enter your medical query:",
     placeholder="e.g., What are the side effects of paracetamol?",
-    key="query_input"
+    value=st.session_state.current_query
 )
 
 # Action buttons
@@ -505,5 +509,5 @@ cols = st.columns(3)
 for idx, example in enumerate(example_queries):
     with cols[idx % 3]:
         if st.button(example, key=f"example_{idx}", use_container_width=True):
-            st.session_state.query_input = example
+            st.session_state.current_query = example
             st.rerun()
