@@ -4,7 +4,7 @@ MEDGraphy is an intelligent, interactive drug information application that combi
 
 ## 🌐 Live Deployments
 
-- **Hybrid RAG App** (Vector + Graph): [https://medgraphy.streamlit.app/](https://medgraphy.streamlit.app/)
+- **Hybrid RAG App** (Vector + Graph): [https://huggingface.co/spaces/zenitsu09/medgraphy](https://huggingface.co/spaces/zenitsu09/medgraphy)
 - Explore the power of combined vector embeddings and knowledge graph relationships!
 
 ## ✨ Features
