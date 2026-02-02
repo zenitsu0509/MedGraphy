@@ -21,7 +21,7 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 # Other configs
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
 NEO4J_URI = os.getenv("NEO4J_URI") or st.secrets.get("NEO4J_URI")
-NEO4J_USER = os.getenv("NEO4J_USERNAME") or st.secrets.get("NEO4J_USERNAME")
+NEO4J_USER = os.getenv("NEO4J_USER") or st.secrets.get("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD") or st.secrets.get("NEO4J_PASSWORD")
 NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 
