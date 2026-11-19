@@ -10,6 +10,9 @@ from monitoring import hash_query, log_event, source_freshness
 # --- CONFIGURATION ---
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "medicine_embeddings")
+FULLTEXT_INDEX_NAME = os.getenv("FULLTEXT_INDEX_NAME", "medicine_catalog_fulltext")
+if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", FULLTEXT_INDEX_NAME):
+    raise ValueError("FULLTEXT_INDEX_NAME must be a simple Neo4j identifier")
 
 
 @lru_cache(maxsize=1)
@@ -142,60 +145,86 @@ class GraphQueryEngine:
         rows = self.db.query(query, {"name": medicine_name}, db="neo4j") or []
         return [{**dict(row), **(row.get("evidence") or {})} for row in rows]
 
-    def vector_similarity_search(self, query: str) -> list[dict]:
+    def vector_similarity_search(self, query: str, limit: int = 5) -> list[dict]:
         """Uses embeddings to find semantically similar medicines."""
+        limit = max(1, min(int(limit), 50))
         query_embedding = self.get_embedding(query)
         cypher_query = """
-            CALL db.index.vector.queryNodes($index_name, 5, $embedding)
+            CALL db.index.vector.queryNodes($index_name, $limit, $embedding)
             YIELD node AS medicine, score
             RETURN medicine.medicine_id AS medicine_id, medicine.name AS name, score
+            ORDER BY score DESC
         """
         result = self.db.query(
             cypher_query,
-            parameters={"index_name": VECTOR_INDEX_NAME, "embedding": query_embedding},
+            parameters={"index_name": VECTOR_INDEX_NAME, "limit": limit, "embedding": query_embedding},
             db="neo4j",
         )
         log_event("retrieval", route="vector", hit_count=len(result or []), outcome="hit" if result else "miss")
         return result
 
+    def fulltext_search(self, query: str, limit: int = 10) -> list[dict]:
+        """Run Lucene full-text retrieval over product names and catalog text."""
+        stopwords = {
+            "a", "an", "and", "are", "as", "at", "be", "by", "can", "does", "for", "from",
+            "how", "i", "in", "is", "it", "lists", "listed", "me", "medicine", "medgraphy",
+            "of", "on", "or", "product", "should", "the", "this", "to", "use", "what", "which",
+            "with", "would",
+        }
+        tokens = []
+        for token in re.findall(r"[a-z0-9]+", query.lower()):
+            if len(token) < 2 or token in stopwords or token in tokens:
+                continue
+            tokens.append(token)
+        if not tokens:
+            return []
+        # Quote each token so user-provided Lucene operators cannot change query semantics.
+        search_text = " OR ".join(f'"{token}"' for token in tokens[:16])
+        try:
+            return self.db.query("""
+                CALL db.index.fulltext.queryNodes($index_name, $search_text, {limit:$limit})
+                YIELD node AS medicine, score
+                RETURN medicine.medicine_id AS medicine_id, medicine.name AS name, score
+                ORDER BY score DESC
+            """, {"index_name": FULLTEXT_INDEX_NAME, "search_text": search_text, "limit": limit}, db="neo4j") or []
+        except Exception as exc:
+            # Keep old databases usable until the explicit index migration has run.
+            log_event("retrieval_fulltext_unavailable", index_name=FULLTEXT_INDEX_NAME, error_type=type(exc).__name__)
+            return []
+
+    def condition_candidates(self, condition: str, limit: int = 10) -> list[dict]:
+        """Return condition/use matches ordered by lexical specificity, not review scores."""
+        if not condition:
+            return []
+        limit = max(1, min(int(limit), 50))
+        rows = self.db.query("""
+            WITH $cond AS q
+            CALL (q) {
+              MATCH (m:Medicine)-[:TREATS]->(c:Condition)
+              WHERE toLower(c.name) = toLower(q)
+              RETURN m, 0 AS match_priority
+              UNION
+              MATCH (m:Medicine)-[:TREATS]->(c:Condition)
+              WHERE toLower(c.name) CONTAINS toLower(q) AND toLower(c.name) <> toLower(q)
+              RETURN m, 1 AS match_priority
+              UNION
+              MATCH (m:Medicine)
+              WHERE m.uses_text IS NOT NULL AND toLower(m.uses_text) CONTAINS toLower(q)
+              RETURN m, 2 AS match_priority
+            }
+            WITH m, min(match_priority) AS match_priority
+            RETURN m.name AS name, m.medicine_id AS medicine_id,
+                   match_priority, m.uses_text AS uses_text
+            ORDER BY match_priority, size(coalesce(m.uses_text,'')), name
+            LIMIT $limit
+        """, {"cond": condition, "limit": limit}, db="neo4j")
+        return rows or []
+
     
     def _best_medicine_for_condition(self, condition: str) -> dict | None:
-        """Prefer the most specific catalog match; use review scores only as a tie-breaker."""
-        if not condition:
-            return None
-        cypher = """
-        WITH $cond AS q
-        CALL (q) {
-          MATCH (m:Medicine)-[:TREATS]->(c:Condition)
-          WHERE toLower(c.name) = toLower(q)
-          RETURN m, 0 AS match_priority
-          UNION
-          MATCH (m:Medicine)-[:TREATS]->(c:Condition)
-          WHERE toLower(c.name) CONTAINS toLower(q) AND toLower(c.name) <> toLower(q)
-          RETURN m, 1 AS match_priority
-          UNION
-          MATCH (m:Medicine)
-          WHERE m.uses_text IS NOT NULL AND toLower(m.uses_text) CONTAINS toLower(q)
-          RETURN m, 2 AS match_priority
-        }
-        WITH m, min(match_priority) AS match_priority
-        RETURN m.name AS name, m.medicine_id AS medicine_id,
-               coalesce(m.excellent_review_pct,0) AS excellent,
-               coalesce(m.average_review_pct,0) AS average
-        ORDER BY match_priority, excellent DESC, average DESC, name
-        LIMIT 1
-        """
-        res = self.db.query(cypher, {"cond": condition}, db="neo4j")
-        if res and len(res) > 0:
-            try:
-                return {"name": res[0]["name"], "medicine_id": res[0]["medicine_id"]}
-            except Exception:
-                rec = res[0]
-                if hasattr(rec, "data"):
-                    return rec.data()
-                if hasattr(rec, "keys"):
-                    return {"name": rec["name"], "medicine_id": rec["medicine_id"]}
-        return None
+        """Return the most lexically specific catalog match without review-score ranking."""
+        rows = self.condition_candidates(condition, limit=1)
+        return dict(rows[0]) if rows else None
 
     def _extract_condition_from_query(self, user_query: str) -> str | None:
         """Very light heuristic to extract a condition phrase like 'fever' from queries.
@@ -237,54 +266,80 @@ class GraphQueryEngine:
                 return t
         return None
 
-    def retrieve_context_for_rag(self, user_query: str) -> dict | None:
-        """Retrieves the context from the graph for the RAG pipeline.
-        Strategy: Try condition-first (e.g., 'medicine for fever') -> choose a best medicine.
-        Fall back to vector retrieval if condition-based selection fails.
-        """
+    def retrieve_context_for_rag(self, user_query: str, strategy: str = "hybrid") -> dict | None:
+        """Retrieve one catalog record using vector-only or lexical/graph/vector RRF."""
+        if strategy not in {"hybrid", "vector-only"}:
+            raise ValueError("strategy must be 'hybrid' or 'vector-only'")
         started = time.monotonic()
         top_medicine_name: str | None = None
         top_medicine_id: str | None = None
+        retrieval_sources: list[str] = []
+        retrieval_score: float | None = None
+        candidates_by_id: dict[str, dict[str, Any]] = {}
 
-        # A product explicitly named in the prompt is a stronger anchor than
-        # semantic similarity, which can otherwise return a related product.
-        named = self.db.query("""
-            MATCH (m:Medicine)
-            WHERE toLower($query) CONTAINS toLower(m.name)
-            RETURN m.name AS name, m.medicine_id AS medicine_id
-            ORDER BY size(m.name) DESC, m.name
-            LIMIT 1
-        """, {"query": user_query.strip()}, db="neo4j")
-        if named:
-            top_medicine_name = named[0]["name"]
-            top_medicine_id = named[0].get("medicine_id")
+        if strategy == "vector-only":
+            vector_rows = self.vector_similarity_search(user_query, limit=1)
+            for candidate in vector_rows:
+                identity = candidate.get("medicine_id") or candidate.get("name")
+                if identity:
+                    candidates_by_id[identity] = {
+                        "medicine_id": candidate.get("medicine_id"), "name": candidate.get("name"),
+                        "rrf_score": 1.0, "sources": ["vector"],
+                    }
+        else:
+            # Exact named products should win over semantically similar records.
+            named = self.db.query("""
+                MATCH (m:Medicine)
+                WHERE toLower($query) CONTAINS toLower(m.name)
+                RETURN m.name AS name, m.medicine_id AS medicine_id
+                ORDER BY size(m.name) DESC, m.name
+                LIMIT 1
+            """, {"query": user_query.strip()}, db="neo4j") or []
+            if named:
+                top_medicine_name = named[0]["name"]
+                top_medicine_id = named[0].get("medicine_id")
+                retrieval_sources = ["exact_name"]
+                retrieval_score = 1.0
 
-        # A) Condition-first heuristic
-        cond = self._extract_condition_from_query(user_query)
-        if cond and not top_medicine_name:
-            best = self._best_medicine_for_condition(cond)
-            if best:
-                top_medicine_name = best["name"]
-                top_medicine_id = best.get("medicine_id")
+            def add_ranked(source: str, candidates: list[dict], weight: float = 1.0) -> None:
+                for rank, candidate in enumerate(candidates, start=1):
+                    identity = candidate.get("medicine_id") or candidate.get("name")
+                    if not identity:
+                        continue
+                    current = candidates_by_id.setdefault(identity, {
+                        "medicine_id": candidate.get("medicine_id"), "name": candidate.get("name"),
+                        "rrf_score": 0.0, "sources": [],
+                    })
+                    current["rrf_score"] += weight / (60 + rank)
+                    if source not in current["sources"]:
+                        current["sources"].append(source)
 
-        # B) Vector fallback if no clear condition-based anchor
+            if not top_medicine_name:
+                condition = self._extract_condition_from_query(user_query)
+                if condition:
+                    add_ranked("condition_graph", self.condition_candidates(condition, limit=20), weight=2.0)
+                add_ranked("fulltext", self.fulltext_search(user_query, limit=20))
+                add_ranked("vector", self.vector_similarity_search(user_query, limit=20))
+            if top_medicine_name:
+                candidates_by_id = {
+                    top_medicine_id or top_medicine_name: {
+                        "medicine_id": top_medicine_id, "name": top_medicine_name,
+                        "rrf_score": 1.0, "sources": ["exact_name"],
+                    }
+                }
+
+        if not top_medicine_name and candidates_by_id:
+            winner = sorted(
+                candidates_by_id.values(),
+                key=lambda item: (-item["rrf_score"], (item["name"] or "").casefold()),
+            )[0]
+            top_medicine_name = winner["name"]
+            top_medicine_id = winner.get("medicine_id")
+            retrieval_sources = winner["sources"]
+            retrieval_score = winner["rrf_score"]
         if not top_medicine_name:
-            query_embedding = self.get_embedding(user_query)
-            retrieval_query = """
-                CALL db.index.vector.queryNodes($index_name, 1, $embedding)
-                YIELD node AS medicine
-                RETURN medicine.name AS med_name, medicine.medicine_id AS medicine_id
-            """
-            retrieval_result = self.db.query(
-                retrieval_query,
-                parameters={"index_name": VECTOR_INDEX_NAME, "embedding": query_embedding},
-                db="neo4j",
-            )
-            if not retrieval_result:
-                log_event("retrieval", route="rag_vector_fallback", hit_count=0, outcome="miss", query_hash=hash_query(user_query))
-                return None
-            top_medicine_name = retrieval_result[0]["med_name"]
-            top_medicine_id = retrieval_result[0].get("medicine_id")
+            log_event("retrieval", route=f"rag_{strategy}", hit_count=0, outcome="miss", query_hash=hash_query(user_query))
+            return None
 
         # 2. AUGMENT: Fetch its full context from the graph
         context_query = """
@@ -322,6 +377,10 @@ class GraphQueryEngine:
             context[key if key != "source_retrieved_at" else "retrieved_at"] = medicine_props.get(key)
         log_event("retrieval", route="rag", hit_count=1, outcome="hit", elapsed_ms=round((time.monotonic()-started)*1000), query_hash=hash_query(user_query), source_freshness=source_freshness(context.get("retrieved_at")))
         context["source_ref"] = "[S1]"
+        context["retrieval_strategy"] = strategy
+        context["retrieval_sources"] = retrieval_sources
+        context["retrieval_score"] = retrieval_score
+        log_event("retrieval_ranked", route=f"rag_{strategy}", candidate_count=len(candidates_by_id), selected_sources=retrieval_sources)
         return {
             "medicine_found": top_medicine_name,
             "context": context,

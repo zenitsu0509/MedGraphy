@@ -21,7 +21,7 @@ load_dotenv(".env.local")
 load_dotenv()
 
 from graph_db import Neo4jConnection  # noqa: E402
-from graph_rag_query import GraphQueryEngine, VECTOR_INDEX_NAME  # noqa: E402
+from graph_rag_query import FULLTEXT_INDEX_NAME, GraphQueryEngine, VECTOR_INDEX_NAME  # noqa: E402
 from llm_chains import generate_rag_response, get_groq_client  # noqa: E402
 from monitoring import hash_query, log_event, source_freshness  # noqa: E402
 from data_pipeline import normalize_key  # noqa: E402
@@ -148,7 +148,13 @@ def health(request: Request):
             RETURN state, populationPercent
         """, {"index_name": VECTOR_INDEX_NAME}, db="neo4j")
         index = dict(index_rows[0]) if index_rows else {"state": "missing", "populationPercent": 0}
-        return {"status": "ok", "database": "connected", "vector_index": index}
+        fulltext_rows = engine.db.query("""
+            SHOW FULLTEXT INDEXES YIELD name, state
+            WHERE name=$index_name
+            RETURN state
+        """, {"index_name": FULLTEXT_INDEX_NAME}, db="neo4j")
+        fulltext = dict(fulltext_rows[0]) if fulltext_rows else {"state": "missing"}
+        return {"status": "ok", "database": "connected", "vector_index": index, "fulltext_index": fulltext}
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Neo4j is unavailable") from exc
 

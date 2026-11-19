@@ -29,6 +29,8 @@ To populate a new local Neo4j database with the medicine catalog and vector embe
 .venv/bin/python ingest_graph.py --csv data/Medicine_Details.csv
 ```
 
+The ingestion command creates the vector and full-text indexes. If the medicine graph was already populated before hybrid retrieval was added, create its full-text index once with `.venv/bin/python ensure_rag_indexes.py`.
+
 Audit the Ayurveda file first, then import its rows into isolated graph labels. The import is additive and does not clear the database:
 
 ```bash
@@ -52,7 +54,7 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Interactive API documentati
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/health` | Database and vector-index status |
+| `GET` | `/api/health` | Database, vector-index, and full-text-index status |
 | `GET` | `/api/medicines/search?q=...` | Search catalog products by name |
 | `GET` | `/api/medicines/{medicine_id}` | Retrieve one product record and provenance |
 | `GET` | `/api/conditions/search?q=...` | Find catalog products with matching condition text, with conservative spelling correction when exact lookup misses |
@@ -89,13 +91,23 @@ The importer rejects unreviewed or insufficiently sourced rows. No interaction d
 
 ## Evaluation and monitoring
 
-Run the RAG benchmark against the local Neo4j graph. The default run uses local retrieval only and does not call an LLM provider:
+Run the RAG benchmark against the local Neo4j graph. The default run compares vector-only retrieval with hybrid retrieval on the same Allopathy cases, and measures Ayurveda search separately. It stays local and does not call an LLM provider:
 
 ```bash
 .venv/bin/python evaluate_rag.py
 ```
 
-It evaluates Allopathy RAG top-1 retrieval, required context fields, and source metadata, plus Ayurveda search Recall@k/MRR and provenance retention. The curated cases are in `eval/rag_cases.json`; output defaults to `reports/rag_benchmark/latest.json`.
+It reports Allopathy top-1 relevance, context/provenance coverage, and mean retrieval latency for each strategy, plus Ayurveda Recall@k/MRR and provenance retention. The hybrid path gives exact product-name matches priority; otherwise it fuses graph condition matches, Neo4j Lucene full-text results, and vector candidates with weighted Reciprocal Rank Fusion (condition matches weight 2, RRF constant 60). The curated cases are in `eval/rag_cases.json`; output defaults to `reports/rag_benchmark/latest.json`. Run one strategy with `--strategy hybrid` or `--strategy vector-only`.
+
+Latest local retrieval-only benchmark (six Allopathy cases and three Ayurveda cases, warmed embedding model):
+
+| Strategy | Allopathy top-1 relevance | Context field coverage | Source metadata coverage | Mean retrieval latency |
+|---|---:|---:|---:|---:|
+| Vector-only | 3/6 (50%) | 6/6 (100%) | 6/6 (100%) | 47.0 ms |
+| Hybrid | 6/6 (100%) | 6/6 (100%) | 6/6 (100%) | 44.4 ms |
+| Ayurveda search, Recall@5 | 3/3 (100%) | — | 3/3 (100%) | MRR 1.00 |
+
+This is a small development benchmark against the current local graph; the condition cases count a result as relevant when its retrieved catalog text contains the expected use phrase. It measures retrieval only, not answer faithfulness, medical correctness, or production-scale latency. Expand the reviewed case set before making broad performance claims.
 
 To include answer generation, citations, expected answer terms, abstention cases, and automated safety review flags, use the configured Groq model:
 
@@ -119,5 +131,6 @@ Operational events are appended to `runtime/medgraph_events.jsonl`. The logger r
 | `GROQ_MODEL` | `qwen/qwen3.8-27b` | Groq chat model |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence Transformers model |
 | `VECTOR_INDEX_NAME` | `medicine_embeddings` | Neo4j vector index name |
+| `FULLTEXT_INDEX_NAME` | `medicine_catalog_fulltext` | Neo4j Lucene full-text index name for hybrid retrieval |
 
 Stop the local database with `docker compose --env-file .env.local stop neo4j`. This keeps the named data volumes intact.

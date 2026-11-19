@@ -1074,7 +1074,7 @@
     api('/api/health').then(data => {
       const status = $('health-status');
       status.classList.add('online');
-      status.lastElementChild.textContent = data.vector_index?.state === 'ONLINE' ? 'Neo4j connected' : 'Database connected · vector index ' + (data.vector_index?.state || 'unknown');
+      status.lastElementChild.textContent = `Neo4j connected · vector ${data.vector_index?.state || 'unknown'} · text ${data.fulltext_index?.state || 'missing'}`;
     }).catch(() => {
       $('health-status').lastElementChild.textContent = 'Database unavailable';
     });

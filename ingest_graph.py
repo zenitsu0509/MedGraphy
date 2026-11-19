@@ -19,6 +19,9 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "medicine_embeddings")
 if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", VECTOR_INDEX_NAME):
     raise ValueError("VECTOR_INDEX_NAME must be a simple Neo4j identifier")
+FULLTEXT_INDEX_NAME = os.getenv("FULLTEXT_INDEX_NAME", "medicine_catalog_fulltext")
+if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", FULLTEXT_INDEX_NAME):
+    raise ValueError("FULLTEXT_INDEX_NAME must be a simple Neo4j identifier")
 
 
 def parse_active_ingredients(raw: str) -> list[str]:
@@ -144,7 +147,8 @@ SCHEMA_QUERIES = [
     "CREATE CONSTRAINT ingredient_name IF NOT EXISTS FOR (i:ActiveIngredient) REQUIRE i.name IS UNIQUE",
     "CREATE CONSTRAINT side_effect_name IF NOT EXISTS FOR (s:SideEffect) REQUIRE s.name IS UNIQUE",
     "CREATE CONSTRAINT condition_name IF NOT EXISTS FOR (c:Condition) REQUIRE c.name IS UNIQUE",
-    "CREATE CONSTRAINT manufacturer_name IF NOT EXISTS FOR (mf:Manufacturer) REQUIRE mf.name IS UNIQUE"
+    "CREATE CONSTRAINT manufacturer_name IF NOT EXISTS FOR (mf:Manufacturer) REQUIRE mf.name IS UNIQUE",
+    f"CREATE FULLTEXT INDEX {FULLTEXT_INDEX_NAME} IF NOT EXISTS FOR (m:Medicine) ON EACH [m.name, m.composition, m.uses_text, m.side_effects_text]"
 ]
 
 VECTOR_INDEX_CYPHER = f"""
