@@ -1,0 +1,14 @@
+{
+  "source_id": "medgraphy-ayurveda-csv-v1",
+  "source_name": "Ayurveda dataset supplied to MEDGraphy",
+  "data_file": "data/ayurveda/ayurveda_dataset.csv",
+  "source_url": null,
+  "source_date": null,
+  "retrieved_at": null,
+  "license": "Unknown; obtain and verify upstream license before redistribution.",
+  "jurisdiction": null,
+  "content_type": "unverified_ayurveda_catalog",
+  "clinical_authority": "not_assessed",
+  "provenance_status": "unverified_preview",
+  "notes": "The repository does not document the upstream publisher, URL, publication date, or license. Repeated generic evidence and endorsement text is not record-level substantiation. Preserve source text as supplied and do not present it as verified medical guidance."
+}

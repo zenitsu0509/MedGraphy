@@ -1,29 +1,27 @@
 import os
-import streamlit as st
 import groq
 from dotenv import load_dotenv
 import json
+from functools import lru_cache
+from monitoring import audit_citations, log_event
 
 # Load environment variables for local development
+# Local Docker settings override database values in .env; other keys still fall back.
+load_dotenv(".env.local")
 load_dotenv()
 
-@st.cache_resource
-def get_groq_client():
-    """Initializes and returns the Groq client."""
-    # Prioritize Streamlit secrets, fall back to .env for local dev
-    if hasattr(st, 'secrets') and "GROQ_API_KEY" in st.secrets:
-        groq_api_key = st.secrets["GROQ_API_KEY"]
-        print("Using Groq API key from Streamlit secrets.")
-    else:
-        groq_api_key = os.getenv("GROQ_API_KEY")
-        print("Using Groq API key from local .env file.")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
+@lru_cache(maxsize=1)
+def get_groq_client():
+    """Initializes the Groq client from environment configuration."""
+    groq_api_key = os.getenv("GROQ_API_KEY")
     if not groq_api_key:
-        raise ValueError("GROQ_API_KEY not found. Please set it in your .env file or Streamlit secrets.")
+        raise ValueError("GROQ_API_KEY not found. Set it in .env.local or .env.")
     return groq.Groq(api_key=groq_api_key)
 
-def get_rag_response(user_query: str, context: dict, groq_client) -> str:
-    """Generates a response from the LLM based on the user's query and retrieved context."""
+def generate_rag_response(user_query: str, context: dict, groq_client) -> str:
+    """Generate an answer or raise the provider error for API-level handling."""
 
     context_str = json.dumps(context, indent=2)
 
@@ -35,20 +33,33 @@ def get_rag_response(user_query: str, context: dict, groq_client) -> str:
     - If asked to compare or recommend and only one medicine is provided, say more data may be needed.
     - If review percentages exist, include a short sentiment summary.
     - If image_url present, mention that an image is available (do NOT fabricate description of the image content beyond name).
+    - Treat the catalog as unverified metadata, not clinical guidance or prescribing advice.
+    - Cite catalog facts with [S1]. Never create a citation or a clinical interaction claim unsupported by context.
     - Do NOT invent medical advice beyond the context – if missing, state that.
     """
 
     human_prompt = f"""Structured Context:\n{context_str}\n\nUser Question: {user_query}\n\nReturn a concise, bullet-style answer when listing items."""
 
-    try:
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": human_prompt},
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.3,
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e:
-        return f"An error occurred while generating the response: {e}"
+    completion = groq_client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": human_prompt},
+        ],
+        model=GROQ_MODEL,
+        temperature=0.6,
+        max_completion_tokens=2048,
+        top_p=0.95,
+        reasoning_effort="default",
+        stream=True,
+        stop=None,
+    )
+    answer = "".join(
+        chunk.choices[0].delta.content or ""
+        for chunk in completion
+        if chunk.choices
+    )
+    citation_audit = audit_citations(answer, ["S1"] if context.get("source_ref") else [])
+    log_event("answer_generated", citation_audit=citation_audit, source_id=context.get("source_id"))
+    return answer
+
+

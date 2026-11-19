@@ -1,0 +1,19 @@
+services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: medgraph-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env.local}
+    volumes:
+      - neo4j_local_data:/data
+      - neo4j_local_logs:/logs
+
+volumes:
+  neo4j_local_data:
+    name: medgraphy_neo4j_data
+  neo4j_local_logs:
+    name: medgraphy_neo4j_logs

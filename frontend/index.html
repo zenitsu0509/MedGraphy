@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f0f6f6">
+  <title>MEDGraphy</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      
+      /* Allopathy Theme (Clinical Teal & Slate) */
+      --bg: #f2f7f7;
+      --bg-glow: #cce8e8;
+      --text: #112a2e;
+      --muted: #567175;
+      --primary: #0d6e6e;
+      --primary-dark: #084c4c;
+      --primary-light: #e3f3f3;
+      --primary-glow: rgba(13, 110, 110, 0.22);
+      --header-grad: linear-gradient(120deg, #07383b 0%, #0d6366 100%);
+      --btn-grad: linear-gradient(135deg, #0f7a7a 0%, #0a5454 100%);
+      --paper: #ffffff;
+      --line: #d7e6e6;
+      --badge-bg: #e4f4f4;
+      --badge-text: #0b5858;
+      --switch-bg: #e1ecec;
+      --focus-ring: rgba(13, 110, 110, 0.16);
+      --card-shadow: 0 12px 32px -4px rgba(13, 59, 62, 0.06);
+    }
+
+    /* Ayurveda Theme (Botanical Earth, Sage & Terracotta) */
+    body.theme-ayurveda {
+      --bg: #f8f5ef;
+      --bg-glow: #ebe0cc;
+      --text: #2c2219;
+      --muted: #70604f;
+      --primary: #8c5228;
+      --primary-dark: #5e3416;
+      --primary-light: #f5ebe0;
+      --primary-glow: rgba(140, 82, 40, 0.22);
+      --header-grad: linear-gradient(120deg, #3b2313 0%, #6e4423 100%);
+      --btn-grad: linear-gradient(135deg, #9c5c2d 0%, #73401b 100%);
+      --paper: #fffdf9;
+      --line: #e6dccf;
+      --badge-bg: #f3e9dc;
+      --badge-text: #6e3f1d;
+      --switch-bg: #ebe3d6;
+      --focus-ring: rgba(140, 82, 40, 0.16);
+      --card-shadow: 0 12px 32px -4px rgba(66, 43, 21, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+    
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: radial-gradient(ellipse at 85% -10%, var(--bg-glow) 0%, transparent 45%), var(--bg);
+      transition: background-color 0.35s ease, color 0.35s ease;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    /* Sticky Modern Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--header-grad);
+      color: #fff;
+      padding: 15px max(4vw, 22px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+      backdrop-filter: blur(12px);
+      transition: background 0.35s ease;
+    }
+
+    .head-inner {
+      width: min(1180px, 100%);
+      margin: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      font-size: 1.4rem;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.25);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .brand:hover .logo { transform: scale(1.06) rotate(-4deg); }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.28rem;
+      letter-spacing: -0.03em;
+      font-weight: 800;
+    }
+
+    .brand p {
+      margin: 2px 0 0;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 0.83rem;
+    }
+
+    .health {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.79rem;
+      font-weight: 500;
+      background: rgba(0, 0, 0, 0.22);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 7px 13px;
+      border-radius: 999px;
+    }
+
+    .health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #b0c4be;
+      transition: background 0.25s, box-shadow 0.25s;
+    }
+
+    .health.online .health-dot {
+      background: #4ade80;
+      box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.22);
+    }
+
+    /* Main Container */
+    .wrap {
+      width: min(1180px, 92vw);
+      margin: 34px auto 76px;
+    }
+
+    /* Hero & Mode Switcher */
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 22px;
+    }
+
+    .hero h2 {
+      font-size: clamp(1.7rem, 3vw, 2.4rem);
+      letter-spacing: -0.04em;
+      margin: 0 0 7px;
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.97rem;
+    }
+
+    .mode-switch {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px;
+      background: var(--switch-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      flex: none;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    .mode-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 0;
+      border-radius: 11px;
+      padding: 10px 18px;
+      color: var(--muted);
+      background: transparent;
+      font-weight: 700;
+      font-size: 0.92rem;
+      transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .mode-btn:hover { color: var(--primary-dark); }
+
+    .mode-btn.active {
+      color: #fff;
+      background: var(--btn-grad);
+      box-shadow: 0 4px 14px var(--primary-glow);
+      transform: translateY(-1px);
+    }
+
+    /* Banners & Notices */
+    .safety-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      margin: 0 0 18px;
+      padding: 11px 15px;
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+    }
+
+    .safety-line .icon {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fef3c7;
+      color: #b45309;
+      font-weight: 700;
+      font-size: 0.78rem;
+      flex: none;
+    }
+
+    .mode-note {
+      padding: 13px 16px;
+      margin: 0 0 20px;
+      border-radius: 13px;
+      background: #fff8e6;
+      border: 1px solid #eed79c;
+      border-left: 4px solid #d99b26;
+      color: #6b4e0e;
+      line-height: 1.5;
+      font-size: 0.88rem;
+    }
+    .mode-note strong { color: #543d09; }
+
+    /* Navigation Tabs */
+    .tabs {
+      display: flex;
+      gap: 9px;
+      overflow: auto;
+      padding: 2px 2px 15px;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+
+    .tab {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.45);
+      color: var(--muted);
+      padding: 10px 17px;
+      white-space: nowrap;
+      cursor: pointer;
+      font-weight: 650;
+      font-size: 0.92rem;
+      transition: all 0.2s ease;
+    }
+
+    .tab:hover {
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      transform: translateY(-1px);
+    }
+
+    .tab.active {
+      background: var(--paper);
+      color: var(--primary);
+      border-color: var(--line);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Interactive Panels */
+    section.panel, .ayurveda-panel {
+      display: none;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: clamp(20px, 3vw, 30px);
+      box-shadow: var(--card-shadow);
+      animation: rise 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+      transition: background 0.35s ease, border-color 0.35s ease;
+    }
+
+    section.panel.active, .ayurveda-panel.active { display: block; }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    h3.section-title {
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px;
+      color: var(--text);
+      font-weight: 750;
+    }
+
+    .help {
+      color: var(--muted);
+      margin: 0 0 20px;
+      line-height: 1.55;
+      font-size: 0.93rem;
+    }
+
+    /* Form Controls */
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+    .row input { flex: 1; min-width: 0; }
+    .row select { max-width: 210px; }
+
+    .control {
+      width: 100%;
+      border: 1.5px solid var(--line);
+      border-radius: 13px;
+      padding: 13px 16px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.18s, box-shadow 0.18s;
+    }
+    .control::placeholder { color: #94a7a9; }
+    .control:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px var(--focus-ring);
+    }
+
+    .primary {
+      border: 0;
+      border-radius: 13px;
+      background: var(--btn-grad);
+      color: #fff;
+      font-weight: 700;
+      padding: 12px 22px;
+      box-shadow: 0 6px 15px var(--primary-glow);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+      white-space: nowrap;
+    }
+    .primary:hover {
+      transform: translateY(-1.5px);
+      box-shadow: 0 9px 20px var(--primary-glow);
+      filter: brightness(1.05);
+    }
+    .primary:active { transform: translateY(0); }
+
+    /* Quick Search Chips */
+    .quick-searches {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      color: var(--primary-dark);
+      background: var(--primary-light);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      transition: all 0.16s ease;
+    }
+    .chip:hover {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    /* Results & Cards */
+    .result { margin-top: 22px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+      background: linear-gradient(165deg, var(--paper) 0%, rgba(255, 255, 255, 0.7) 100%);
+      transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card:hover {
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.06);
+      transform: translateY(-3px);
+      border-color: var(--primary);
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.08rem;
+      color: var(--text);
+      letter-spacing: -0.015em;
+    }
+
+    .card p {
+      margin: 6px 0;
+      line-height: 1.55;
+      font-size: 0.92rem;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 4px 11px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-size: 0.76rem;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+    }
+
+    .source {
+      border-top: 1px dashed var(--line);
+      margin-top: 14px;
+      padding-top: 11px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .source a {
+      display: inline-block;
+      margin-left: 6px;
+      color: var(--primary);
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .source a:hover { text-decoration: underline; }
+
+    /* States: Empty, Loading Spinner, Error, Warning */
+    .empty, .loading, .error {
+      padding: 18px;
+      color: var(--muted);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px dashed var(--line);
+      font-size: 0.92rem;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--primary-dark);
+      background: var(--primary-light);
+      border-style: solid;
+      font-weight: 600;
+    }
+
+    .loading::before {
+      content: "";
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2.5px solid var(--primary);
+      border-top-color: transparent;
+      animation: spin 0.75s linear infinite;
+      flex: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error {
+      color: #991b1b;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+    }
+
+    .warning {
+      color: #78520b;
+      background: #fff8e1;
+      border: 1px solid #f2de9b;
+      padding: 11px 13px;
+      border-radius: 11px;
+      margin-top: 10px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    /* Card Actions & Expandables */
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: auto;
+      padding-top: 14px;
+    }
+
+    .secondary {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--primary-dark);
+      background: var(--primary-light);
+      padding: 8px 13px;
+      font-weight: 650;
+      font-size: 0.85rem;
+      transition: all 0.16s ease;
+    }
+    .secondary:hover {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .answer {
+      white-space: pre-wrap;
+      line-height: 1.7;
+      font-size: 0.95rem;
+      background: var(--primary-light);
+      padding: 15px 18px;
+      border-radius: 13px;
+      margin: 8px 0;
+    }
+
+    .preview-image {
+      width: 100%;
+      height: 195px;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      margin: 8px 0;
+      background: var(--bg);
+    }
+
+    .plant-caption {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .details {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 13px;
+      background: rgba(0, 0, 0, 0.015);
+    }
+
+    .details summary {
+      cursor: pointer;
+      color: var(--primary-dark);
+      font-size: 0.86rem;
+      font-weight: 650;
+      user-select: none;
+    }
+
+    .details p {
+      font-size: 0.86rem;
+      color: var(--muted);
+      margin: 8px 0 0;
+    }
+
+    .suggestion {
+      font-size: 0.9rem;
+      color: var(--primary-dark);
+      margin: 0 0 12px 2px;
+      font-weight: 500;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 650px) {
+      .head-inner { align-items: center; }
+      .health { font-size: 0.74rem; padding: 6px 10px; }
+      .wrap { margin: 22px auto 48px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      .mode-switch { width: 100%; }
+      .mode-btn { flex: 1; padding: 10px 8px; }
+      .row { flex-direction: column; }
+      .row select { max-width: none; }
+      .row button { width: 100%; }
+      .tabs { margin-right: -4vw; padding-right: 4vw; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="head-inner">
+      <div class="brand">
+        <div class="logo" id="brand-logo">⚕</div>
+        <div>
+          <h1>MEDGraphy</h1>
+          <p>Medicine knowledge, connected</p>
+        </div>
+      </div>
+      <div class="health" id="health-status">
+        <span class="health-dot"></span>
+        <span>Checking database…</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero">
+      <div>
+        <h2>Explore medicine knowledge</h2>
+        <p>Search the catalog, explore ingredient links, and inspect source details.</p>
+      </div>
+      <div class="mode-switch" role="tablist" aria-label="Medicine system">
+        <button class="mode-btn active" id="mode-allopathy" role="tab" aria-selected="true">⚕ Allopathy</button>
+        <button class="mode-btn" id="mode-ayurveda" role="tab" aria-selected="false">🌿 Ayurveda</button>
+      </div>
+    </div>
+
+    <div class="safety-line">
+      <span class="icon">i</span>
+      <span>Catalog content may be incomplete or unverified. It is not medical advice.</span>
+    </div>
+
+    <div id="allopathy-mode">
+      <div class="mode-note">
+        <strong>Catalog notice:</strong> The modern medicine source and jurisdiction are not verified in this dataset.
+      </div>
+      <nav class="tabs" aria-label="Allopathy tools">
+        <button class="tab active" data-panel="medicine">Medicine lookup</button>
+        <button class="tab" data-panel="condition">Condition search</button>
+        <button class="tab" data-panel="interaction">Ingredients &amp; interactions</button>
+        <button class="tab" data-panel="rag">Ask MEDGraphy</button>
+      </nav>
+
+      <section id="medicine" class="panel active">
+        <h3 class="section-title">Medicine lookup</h3>
+        <p class="help">Search a product name and open a record for its ingredients, catalog fields, and provenance.</p>
+        <form class="row" id="medicine-form">
+          <input class="control" id="medicine-query" minlength="2" placeholder="Try Allegra 120mg or Augmentin 625" required>
+          <button class="primary">Search catalog</button>
+        </form>
+        <div class="quick-searches">
+          <span>Quick try:</span>
+          <button type="button" class="chip" data-fill-target="medicine-query" data-fill-form="medicine-form" data-fill-value="Allegra 120mg">Allegra 120mg</button>
+          <button type="button" class="chip" data-fill-target="medicine-query" data-fill-form="medicine-form" data-fill-value="Augmentin 625">Augmentin 625</button>
+          <button type="button" class="chip" data-fill-target="medicine-query" data-fill-form="medicine-form" data-fill-value="Paracetamol">Paracetamol</button>
+        </div>
+        <div id="medicine-results" class="result"></div>
+      </section>
+
+      <section id="condition" class="panel">
+        <h3 class="section-title">Search by condition</h3>
+        <p class="help">Find catalog entries whose listed use text matches your search.</p>
+        <form class="row" id="condition-form">
+          <input class="control" id="condition-query" minlength="2" placeholder="Try cough or kidney stone" required>
+          <button class="primary">Search catalog</button>
+        </form>
+        <div class="quick-searches">
+          <span>Quick try:</span>
+          <button type="button" class="chip" data-fill-target="condition-query" data-fill-form="condition-form" data-fill-value="cough">Cough</button>
+          <button type="button" class="chip" data-fill-target="condition-query" data-fill-form="condition-form" data-fill-value="fever">Fever</button>
+          <button type="button" class="chip" data-fill-target="condition-query" data-fill-form="condition-form" data-fill-value="kidney stone">Kidney stone</button>
+        </div>
+        <div id="condition-results" class="result"></div>
+      </section>
+
+      <section id="interaction" class="panel">
+        <h3 class="section-title">Ingredients &amp; interactions</h3>
+        <p class="help">Search a medicine to view shared ingredients and any evidence-backed interaction records.</p>
+        <form class="row" id="interaction-form">
+          <input class="control" id="interaction-query" minlength="2" placeholder="Search a medicine name" required>
+          <button class="primary">Find medicine</button>
+        </form>
+        <div id="interaction-results" class="result"></div>
+      </section>
+
+      <section id="rag" class="panel">
+        <h3 class="section-title">Ask MEDGraphy</h3>
+        <p class="help">Ask about catalog fields. Answers include the retrieved source metadata when available.</p>
+        <form id="rag-form">
+          <textarea class="control" id="rag-query" rows="3" maxlength="1200" placeholder="Ask about ingredients or listed catalog details" required style="resize:vertical"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button class="primary">Ask question</button>
+          </div>
+        </form>
+        <div id="rag-results" class="result"></div>
+      </section>
+    </div>
+
+    <div id="ayurveda-mode" class="hidden">
+      <div class="mode-note">
+        <strong>Ayurveda dataset preview:</strong> These records are imported into Neo4j for data review. The publisher, license, dates, and clinical claims have not been verified; entries are not treatment guidance.
+      </div>
+      <section class="ayurveda-panel active">
+        <h3 class="section-title">Explore herbs and source entries</h3>
+        <p class="help">Search imported herb names, entry labels, or symptom text. Herb links mean “mentioned in this source row”; plant photos are linked only when the folder’s common name matches exactly.</p>
+        <form class="row" id="ayurveda-form">
+          <select class="control" id="ayurveda-field" aria-label="Search field">
+            <option value="all">All fields</option>
+            <option value="herb">Herb</option>
+            <option value="problem">Entry label</option>
+            <option value="symptom">Symptom text</option>
+          </select>
+          <input class="control" id="ayurveda-query" minlength="2" placeholder="Try Ashwagandha, Neem, or migraine" required>
+          <button class="primary">Search Ayurveda</button>
+        </form>
+        <div class="quick-searches">
+          <span>Quick searches:</span>
+          <button type="button" class="chip" data-ayurveda-query="Ashwagandha">Ashwagandha</button>
+          <button type="button" class="chip" data-ayurveda-query="Neem">Neem</button>
+          <button type="button" class="chip" data-ayurveda-query="migraine">Migraine</button>
+        </div>
+        <div id="ayurveda-results" class="result"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const tabs = [...document.querySelectorAll('.tab')];
+
+    function activatePanel(name) {
+      tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.panel === name));
+      document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === name));
+    }
+    tabs.forEach(button => button.addEventListener('click', () => activatePanel(button.dataset.panel)));
+
+    function setMode(mode) {
+      const ayurveda = mode === 'ayurveda';
+      document.body.classList.toggle('theme-ayurveda', ayurveda);
+      $('brand-logo').textContent = ayurveda ? '🌿' : '⚕';
+      $('mode-allopathy').classList.toggle('active', !ayurveda);
+      $('mode-ayurveda').classList.toggle('active', ayurveda);
+      $('mode-allopathy').setAttribute('aria-selected', String(!ayurveda));
+      $('mode-ayurveda').setAttribute('aria-selected', String(ayurveda));
+      $('allopathy-mode').classList.toggle('hidden', ayurveda);
+      $('ayurveda-mode').classList.toggle('hidden', !ayurveda);
+    }
+    $('mode-allopathy').addEventListener('click', () => setMode('allopathy'));
+    $('mode-ayurveda').addEventListener('click', () => setMode('ayurveda'));
+
+    // Quick-try helper chips for Allopathy forms
+    document.querySelectorAll('[data-fill-target]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const input = $(chip.dataset.fillTarget);
+        const form = $(chip.dataset.fillForm);
+        if (input && form) {
+          input.value = chip.dataset.fillValue;
+          form.requestSubmit();
+        }
+      });
+    });
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        ...options
+      });
+      const contentType = response.headers.get('content-type') || '';
+      const body = await response.text();
+      if (!contentType.toLowerCase().includes('application/json')) {
+        const excerpt = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+        throw new Error(`Expected JSON from ${path}, got ${contentType || 'unknown content type'} (HTTP ${response.status}). Open the FastAPI app at http://127.0.0.1:8000. ${excerpt}`);
+      }
+      let data;
+      try {
+        data = JSON.parse(body);
+      } catch {
+        throw new Error(`Invalid JSON from ${path} (HTTP ${response.status}). Reload and try again.`);
+      }
+      if (!response.ok) throw new Error(data.detail || 'Request failed');
+      return data;
+    }
+
+    function safeHref(value) {
+      try {
+        const url = new URL(value, window.location.origin);
+        return ['https:', 'http:'].includes(url.protocol) ? url.href : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function showMessage(target, text, kind = 'empty') {
+      const box = $(target);
+      box.replaceChildren();
+      const node = document.createElement('div');
+      node.className = kind;
+      node.textContent = text;
+      box.append(node);
+    }
+
+    function el(tag, text, parent, cls = '') {
+      const node = document.createElement(tag);
+      node.textContent = text ?? '';
+      if (cls) node.className = cls;
+      parent.append(node);
+      return node;
+    }
+
+    function renderMedicine(item, parent, actions = false) {
+      const card = document.createElement('article');
+      card.className = 'card';
+      parent.append(card);
+      el('h3', item.name, card);
+      const image = safeHref(item.image_url);
+      if (image) {
+        const img = document.createElement('img');
+        img.className = 'preview-image';
+        img.src = image;
+        img.alt = 'Catalog image for ' + item.name;
+        img.loading = 'lazy';
+        card.append(img);
+      }
+      if (item.composition) el('p', 'Composition: ' + item.composition, card);
+      if (item.manufacturer) el('p', 'Manufacturer: ' + item.manufacturer, card);
+      if (item.conditions?.length) el('p', 'Listed uses: ' + item.conditions.filter(Boolean).slice(0, 8).join(', '), card);
+      if (item.ingredients?.length) {
+        const wrap = el('div', '', card, 'badges');
+        item.ingredients.filter(Boolean).slice(0, 12).forEach(value => el('span', value, wrap, 'badge'));
+      }
+      if (item.side_effects?.length) el('p', 'Listed side effects: ' + item.side_effects.filter(Boolean).slice(0, 8).join(', '), card);
+      const source = el('div', `Source: ${item.source_name || 'unknown'} · Date: ${item.source_date || 'unknown'} · Jurisdiction: ${item.jurisdiction || 'unknown'} · License: ${item.license || 'unknown'} · Provenance: ${item.provenance_status || 'unknown'}`, card, 'source');
+      const href = safeHref(item.source_url);
+      if (href) {
+        const a = document.createElement('a');
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'Source details';
+        source.append(a);
+      }
+      if (item.source_conflict_fields?.length) el('div', 'Conflicting source values: ' + item.source_conflict_fields.join(', '), card, 'warning');
+      if (actions) {
+        const actionsBox = el('div', '', card, 'card-actions');
+        const open = el('button', 'Open record', actionsBox, 'secondary');
+        open.onclick = async () => {
+          try {
+            const full = await api('/api/medicines/' + encodeURIComponent(item.medicine_id));
+            card.replaceWith(renderMedicine(full, parent, false));
+          } catch (error) {
+            showMessage('medicine-results', error.message, 'error');
+          }
+        };
+        const evidence = el('button', 'Check evidence', actionsBox, 'secondary');
+        evidence.onclick = () => {
+          setMode('allopathy');
+          activatePanel('interaction');
+          loadEvidence(item);
+        };
+      }
+      return card;
+    }
+
+    $('medicine-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      showMessage('medicine-results', 'Searching catalog…', 'loading');
+      try {
+        const data = await api('/api/medicines/search?q=' + encodeURIComponent($('medicine-query').value));
+        $('medicine-results').replaceChildren();
+        if (!data.results.length) return showMessage('medicine-results', 'No catalog matches.');
+        const grid = el('div', '', $('medicine-results'), 'grid');
+        data.results.forEach(item => renderMedicine(item, grid, true));
+      } catch (error) {
+        showMessage('medicine-results', error.message, 'error');
+      }
+    });
+
+    $('condition-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      showMessage('condition-results', 'Searching catalog…', 'loading');
+      try {
+        const data = await api('/api/conditions/search?q=' + encodeURIComponent($('condition-query').value));
+        $('condition-results').replaceChildren();
+        if (data.corrected_query) el('p', `No exact match for “${data.query}”. Showing “${data.corrected_query}”.`, $('condition-results'), 'suggestion');
+        if (!data.results.length) return showMessage('condition-results', 'No catalog matches.');
+        const grid = el('div', '', $('condition-results'), 'grid');
+        data.results.forEach(item => renderMedicine(item, grid));
+      } catch (error) {
+        showMessage('condition-results', error.message, 'error');
+      }
+    });
+
+    $('interaction-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      showMessage('interaction-results', 'Searching catalog…', 'loading');
+      try {
+        const data = await api('/api/medicines/search?q=' + encodeURIComponent($('interaction-query').value));
+        $('interaction-results').replaceChildren();
+        if (!data.results.length) return showMessage('interaction-results', 'No catalog matches.');
+        const grid = el('div', '', $('interaction-results'), 'grid');
+        data.results.forEach(item => renderMedicine(item, grid, true));
+      } catch (error) {
+        showMessage('interaction-results', error.message, 'error');
+      }
+    });
+
+    async function loadEvidence(item) {
+      const target = $('interaction-results');
+      target.replaceChildren();
+      const section = el('div', '', target);
+      el('h3', 'Evidence-backed interactions', section, 'section-title');
+      try {
+        const data = await api('/api/medicines/' + encodeURIComponent(item.medicine_id) + '/interactions');
+        if (!data.results.length) el('p', 'No reviewed interaction records are loaded for this medicine. This does not establish that there are no interactions.', section, 'warning');
+        data.results.forEach(value => {
+          const card = el('article', '', section, 'card');
+          el('h3', value.medicine, card);
+          el('p', `Severity: ${value.severity || 'unknown'} · Evidence: ${value.evidence_source || 'unknown'} · Jurisdiction: ${value.jurisdiction || 'unknown'}`, card);
+          el('p', value.evidence_summary, card);
+          const href = safeHref(value.evidence_url);
+          if (href) {
+            const link = el('a', 'Open evidence', card);
+            link.href = href;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+          }
+        });
+      } catch (error) {
+        el('p', error.message, section, 'error');
+      }
+      const shared = el('div', '', target, 'result');
+      el('h3', 'Shared ingredients', shared, 'section-title');
+      el('p', 'Ingredient overlap only; it does not establish an interaction.', shared, 'muted');
+      try {
+        const data = await api('/api/medicines/' + encodeURIComponent(item.medicine_id) + '/shared-ingredients');
+        if (!data.results.length) el('p', 'No shared ingredient products found.', shared, 'empty');
+        const grid = el('div', '', shared, 'grid');
+        data.results.forEach(value => {
+          const card = el('article', '', grid, 'card');
+          el('h3', value.medicine, card);
+          el('p', 'Shared ingredient: ' + value.shared_ingredient, card);
+        });
+      } catch (error) {
+        el('p', error.message, shared, 'error');
+      }
+    }
+
+    $('rag-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      showMessage('rag-results', 'Retrieving catalog context…', 'loading');
+      try {
+        const data = await api('/api/rag', { method: 'POST', body: JSON.stringify({ query: $('rag-query').value }) });
+        const target = $('rag-results');
+        target.replaceChildren();
+        const card = el('article', '', target, 'card');
+        if (data.medicine) el('p', 'Retrieved record: ' + data.medicine.name, card, 'muted');
+        el('div', data.answer, card, 'answer');
+        (data.sources || []).forEach(source => {
+          const box = el('div', `[${source.ref}] ${source.name || 'Unknown source'} · Date: ${source.source_date || 'unknown'} · Freshness: ${source.freshness?.status || 'unknown'}`, card, 'source');
+          const href = safeHref(source.url);
+          if (href) {
+            const link = el('a', 'Source details', box);
+            link.href = href;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+          } else el('div', 'No source URL is recorded for this catalog.', box, 'warning');
+        });
+      } catch (error) {
+        showMessage('rag-results', error.message, 'error');
+      }
+    });
+
+    function renderAyurveda(record, parent) {
+      const card = el('article', '', parent, 'card');
+      el('span', 'Unverified preview', card, 'badge');
+      el('h3', record.problem || 'Unlabelled entry', card);
+      if (record.herbs?.length) {
+        el('p', 'Herbs mentioned in this dataset row', card, 'muted');
+        const badges = el('div', '', card, 'badges');
+        record.herbs.forEach(herb => el('span', herb, badges, 'badge'));
+      }
+      if (record.symptoms) el('p', 'Dataset symptom text: ' + record.symptoms, card);
+      const descriptors = [
+        ['Dosha type', record.dosha_type],
+        ['Body system', record.body_system],
+        ['Record category', record.chronic_acute],
+        ['Dataset treatment type', record.treatment_type],
+        ['Seasonal suitability', record.seasonal_suitability]
+      ];
+      const populated = descriptors.filter(([, value]) => value);
+      if (populated.length) {
+        const facts = el('div', '', card, 'badges');
+        populated.forEach(([label, value]) => el('span', label + ': ' + value, facts, 'badge'));
+      }
+      (record.images || []).forEach(image => {
+        const src = safeHref(image.url);
+        if (src) {
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = 'Leaf specimen labeled ' + image.class_name;
+          img.loading = 'lazy';
+          img.className = 'preview-image';
+          card.append(img);
+          el('div', `Plant-leaf reference: ${image.class_name}. It is not a medicine product photo.`, card, 'plant-caption');
+        }
+      });
+      const details = el('details', '', card, 'details');
+      el('summary', 'Review imported source text (unverified)', details);
+      [
+        ['Remedies field', record.remedies],
+        ['Contraindications field', record.contraindications],
+        ['Preventive advice field', record.preventive_advice],
+        ['Classical texts field', record.classical_texts],
+        ['Modern evidence field', record.modern_evidence_text],
+        ['Institutional endorsements field', record.institutional_endorsements],
+        ['Authentication notes field', record.authentication_notes]
+      ].forEach(([label, value]) => {
+        if (value) el('p', label + ': ' + value, details);
+      });
+      if (record.confidence_value !== null && record.confidence_value !== undefined) el('p', 'Dataset confidence value (unverified): ' + record.confidence_value, details);
+      if (record.authentication_score !== null && record.authentication_score !== undefined) el('p', 'Dataset authentication score (unverified): ' + record.authentication_score, details);
+      el('div', `Dataset source field: ${record.source_reference || 'unknown'} · Source date: ${record.source_date} · Retrieved: ${record.retrieved_at} · License: ${record.license} · Provenance: ${record.provenance_status}`, card, 'source');
+      el('div', `Source ID: ${record.source_id || 'unknown'} · Row ID: ${record.source_row_id || 'unknown'} · File SHA-256: ${record.source_sha256 || 'unknown'} · Imported: ${record.ingested_at || 'unknown'}`, card, 'source');
+    }
+
+    $('ayurveda-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      showMessage('ayurveda-results', 'Searching imported Ayurveda graph records…', 'loading');
+      try {
+        const params = new URLSearchParams({ q: $('ayurveda-query').value, field: $('ayurveda-field').value });
+        const data = await api('/api/ayurveda/search?' + params.toString());
+        const target = $('ayurveda-results');
+        target.replaceChildren();
+        if (!data.results.length) return showMessage('ayurveda-results', 'No matching dataset entries.');
+        const grid = el('div', '', target, 'grid');
+        data.results.forEach(record => renderAyurveda(record, grid));
+      } catch (error) {
+        showMessage('ayurveda-results', error.message, 'error');
+      }
+    });
+
+    document.querySelectorAll('[data-ayurveda-query]').forEach(button => button.addEventListener('click', () => {
+      $('ayurveda-query').value = button.dataset.ayurvedaQuery;
+      $('ayurveda-field').value = 'herb';
+      $('ayurveda-form').requestSubmit();
+    }));
+
+    api('/api/health').then(data => {
+      const status = $('health-status');
+      status.classList.add('online');
+      status.lastElementChild.textContent = data.vector_index?.state === 'ONLINE' ? 'Neo4j connected' : 'Database connected · vector index ' + (data.vector_index?.state || 'unknown');
+    }).catch(() => {
+      $('health-status').lastElementChild.textContent = 'Database unavailable';
+    });
+  </script>
+</body>
+</html>

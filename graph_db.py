@@ -1,37 +1,24 @@
 import os
-import streamlit as st
 from neo4j import GraphDatabase
-from langchain_community.graphs import Neo4jGraph
 from dotenv import load_dotenv
 
-# Load environment variables from .env file for local development
+load_dotenv(".env.local")
 load_dotenv()
 
 class Neo4jConnection:
     """
     A class to manage the connection to a Neo4j database.
-    It uses the credentials sourced from Streamlit secrets or a local .env file.
+    The connection is configured with environment variables or constructor arguments.
     """
-    def __init__(self):
-        # Prioritize Streamlit secrets, fall back to .env for local dev
-        if hasattr(st, 'secrets') and "NEO4J_URI" in st.secrets:
-            uri = st.secrets["NEO4J_URI"]
-            user = st.secrets["NEO4J_USER"]
-            password = st.secrets["NEO4J_PASSWORD"]
-            print("Connecting to Neo4j using Streamlit secrets.")
-        else:
-            uri = os.getenv("NEO4J_URI")
-            user = os.getenv("NEO4J_USER")
-            password = os.getenv("NEO4J_PASSWORD")
-            print("Connecting to Neo4j using local .env file.")
-
+    def __init__(self, uri: str | None = None, user: str | None = None, password: str | None = None):
+        uri = uri or os.getenv("NEO4J_URI")
+        user = user or os.getenv("NEO4J_USER") or os.getenv("NEO4J_USERNAME")
+        password = password or os.getenv("NEO4J_PASSWORD")
+        if not all((uri, user, password)):
+            raise ValueError("Set NEO4J_URI, NEO4J_USER, and NEO4J_PASSWORD in the environment")
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
-        try:
-            # Verify connection
-            self._driver.verify_connectivity()
-            print("Connected to Neo4j")
-        except Exception as e:
-            print(f"Neo4j connection failed: {e}")
+        self._driver.verify_connectivity()
+        print("Connected to Neo4j")
 
     def close(self):
         if self._driver is not None:
@@ -40,28 +27,7 @@ class Neo4jConnection:
     def query(self, query, parameters=None, db=None):
         """Runs a Cypher query and returns the results."""
         assert self._driver is not None, "Driver not initialized!"
-        session = None
-        response = None
-        try:
-            session = self._driver.session(database=db) if db is not None else self._driver.session()
-            response = list(session.run(query, parameters))
-        except Exception as e:
-            print("Query failed:", e)
-        finally:
-            if session is not None:
-                session.close()
-        return response
+        with (self._driver.session(database=db) if db is not None else self._driver.session()) as session:
+            return list(session.run(query, parameters or {}))
 
 
-graph = Neo4jGraph(
-    url=st.secrets["NEO4J_URI"], 
-    username=st.secrets["NEO4J_USER"], 
-    password=st.secrets["NEO4J_PASSWORD"]
-)
-
-# Refresh schema information for the LangChain graph object
-# This helps the LLM generate more accurate Cypher queries
-try:
-    graph.refresh_schema()
-except Exception as e:
-    print(f"Warning: Could not refresh graph schema. The LLM might generate less accurate queries. Error: {e}")

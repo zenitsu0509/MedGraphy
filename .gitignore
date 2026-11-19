@@ -1,4 +1,34 @@
-__pycache__
-.venv
+# Python environments and generated state
+__pycache__/
+.venv/
+venv/
+
+# Local configuration and secrets; keep only safe templates
 .env
-venv
+.env.*
+**/.env
+**/.env.*
+!.env.local.example
+!.env.aws.example
+
+# Runtime data and generated reports
+runtime/
+reports/
+
+# Source datasets: track only the small catalog/metadata files
+data/
+!data/
+data/*
+!data/Medicine_Details.csv
+!data/source_manifest.json
+!data/interactions_template.csv
+!data/ayurveda/
+data/ayurveda/*
+!data/ayurveda/README.md
+!data/ayurveda/ayurveda_link_candidates.csv
+!data/ayurveda/source_manifest.json
+
+# Large, locally supplied Ayurveda source files and leaf images
+data/ayurveda/ayurveda_dataset.csv
+data/ayurveda/ayurveda_dataset.xlsx
+data/ayurveda/Medicinal Leaf Dataset/

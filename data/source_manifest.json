@@ -1,0 +1,14 @@
+{
+  "source_id": "medgraphy-local-medicine-csv",
+  "source_name": "MEDGraphy repository medicine CSV",
+  "data_file": "data/Medicine_Details.csv",
+  "source_url": null,
+  "source_date": null,
+  "retrieved_at": null,
+  "license": "Unspecified in the repository; verify upstream terms before redistribution.",
+  "jurisdiction": null,
+  "content_type": "medicine_catalog",
+  "clinical_authority": "not_assessed",
+  "provenance_status": "incomplete",
+  "notes": "The upstream publisher, source URL, source date, and jurisdiction are not documented in this repository. Do not treat this file as an authoritative clinical source."
+}

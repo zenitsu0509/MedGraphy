@@ -1,0 +1,11 @@
+{
+  "description": "Catalog retrieval checks only. Expected values are dataset strings, not clinical recommendations.",
+  "cases": [
+    {"id": "medicine_exact_aug", "route": "medicine", "query": "Augmentin 625 Duo Tablet", "expected": ["Augmentin 625 Duo Tablet"]},
+    {"id": "medicine_exact_allegra", "route": "medicine", "query": "Allegra 120mg Tablet", "expected": ["Allegra 120mg Tablet"]},
+    {"id": "condition_bacterial", "route": "condition", "query": "Bacterial infections", "expected": ["Augmentin 625 Duo Tablet", "Azithral 500 Tablet"]},
+    {"id": "condition_reflux", "route": "condition", "query": "acid reflux", "expected": ["Aciloc 150 Tablet"]},
+    {"id": "condition_cough", "route": "condition", "query": "cough with mucus", "expected": ["Ascoril LS Syrup"]},
+    {"id": "unsupported_interaction", "route": "known_interaction", "query": "Augmentin 625 Duo Tablet", "expected": []}
+  ]
+}

@@ -1,0 +1,29 @@
+ayurveda_ingredient,ayurveda_record_mentions,modern_exact_ingredient_rows,modern_exact_product_count,modern_product_examples,image_class,image_count,image_match_basis,link_status
+Aloe vera,681,4,4,Histo Calamine Lotion; Podowart Paint; Podowart S Paint; Silvacure Plus Cream,,0,,exact normalized ingredient match; curator review required
+Amalaki (Amla),680,0,0,,,0,,no exact lexical match found; do not auto-link
+Arjuna,705,0,0,,,0,,no exact lexical match found; do not auto-link
+Ashwagandha,699,0,0,,,0,,no exact lexical match found; do not auto-link
+Bakuchi,699,0,0,,,0,,no exact lexical match found; do not auto-link
+Bhringraj,696,0,0,,,0,,no exact lexical match found; do not auto-link
+Bibhitaki,716,0,0,,,0,,no exact lexical match found; do not auto-link
+Brahmi,637,0,0,,,0,,no exact lexical match found; do not auto-link
+Cardamom,689,0,0,,,0,,no exact lexical match found; do not auto-link
+Cinnamon,719,0,0,,,0,,no exact lexical match found; do not auto-link
+Clove,688,0,0,,,0,,no exact lexical match found; do not auto-link
+Coriander,682,0,0,,,0,,no exact lexical match found; do not auto-link
+Ginger,686,0,0,,,0,,no exact lexical match found; do not auto-link
+Gokshura,732,0,0,,,0,,no exact lexical match found; do not auto-link
+Guduchi,1399,0,0,,,0,,no exact lexical match found; do not auto-link
+Haridra,637,0,0,,,0,,no exact lexical match found; do not auto-link
+Haritaki,663,0,0,,,0,,no exact lexical match found; do not auto-link
+Khadira,685,0,0,,,0,,no exact lexical match found; do not auto-link
+Kutki,676,0,0,,,0,,no exact lexical match found; do not auto-link
+Licorice (Yashtimadhu),696,0,0,,,0,,no exact lexical match found; do not auto-link
+Manjistha,690,0,0,,,0,,no exact lexical match found; do not auto-link
+Mustā,693,0,0,,,0,,no exact lexical match found; do not auto-link
+Neem,738,0,0,,Azadirachta Indica (Neem),60,normalized common name matches parenthetical folder label,exact common-name folder label; botanical identity still needs source verification
+Pippali,667,0,0,,,0,,no exact lexical match found; do not auto-link
+Sandalwood,694,0,0,,Santalum Album (Sandalwood),58,normalized common name matches parenthetical folder label,exact common-name folder label; botanical identity still needs source verification
+Shatavari,659,0,0,,,0,,no exact lexical match found; do not auto-link
+Triphala,716,0,0,,,0,,no exact lexical match found; do not auto-link
+Turmeric,729,0,0,,,0,,no exact lexical match found; do not auto-link

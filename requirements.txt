@@ -1,14 +1,8 @@
 python-dotenv
 neo4j
 groq
-pandas
-streamlit
-langchain_community
+fastapi>=0.115
+uvicorn[standard]>=0.30
 sentence-transformers
-faiss-cpu
-transformers
 tqdm
-boto3
-altair<5
-protobuf
 numpy<2

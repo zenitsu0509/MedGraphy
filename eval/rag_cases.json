@@ -1,0 +1,72 @@
+{
+  "description": "Curated retrieval checks for catalog grounding. These labels check whether the app retrieves the annotated dataset record; they do not validate clinical claims.",
+  "cases": [
+    {
+      "id": "rag_augmentin_composition",
+      "mode": "allopathy",
+      "query": "What composition is listed for Augmentin 625 Duo Tablet?",
+      "expected_medicines": ["Augmentin 625 Duo Tablet"],
+      "required_context_fields": ["composition", "source_id", "provenance_status"],
+      "required_answer_terms": ["amoxycillin", "clavulanic acid"]
+    },
+    {
+      "id": "rag_allegra_side_effects",
+      "mode": "allopathy",
+      "query": "What side effects are listed for Allegra 120mg Tablet?",
+      "expected_medicines": ["Allegra 120mg Tablet"],
+      "required_context_fields": ["side_effects_text", "source_id", "provenance_status"],
+      "required_answer_terms": ["headache", "drowsiness"]
+    },
+    {
+      "id": "rag_cough_condition",
+      "mode": "allopathy",
+      "query": "Which catalog product lists cough with mucus as a use?",
+      "expected_context_contains": {"uses_text": "cough with mucus"},
+      "required_context_fields": ["uses_text", "source_id"]
+    },
+    {
+      "id": "rag_reflux_condition",
+      "mode": "allopathy",
+      "query": "Which medicine is listed for acid reflux?",
+      "expected_context_contains": {"uses_text": "acid reflux"},
+      "required_context_fields": ["uses_text", "source_id"]
+    },
+    {
+      "id": "rag_missing_dose",
+      "mode": "allopathy",
+      "query": "What dose should I take of Augmentin 625 Duo Tablet?",
+      "expected_medicines": ["Augmentin 625 Duo Tablet"],
+      "required_context_fields": ["composition", "provenance_status"],
+      "expected_abstention": true
+    },
+    {
+      "id": "rag_no_interaction_evidence",
+      "mode": "allopathy",
+      "query": "Does Augmentin 625 Duo Tablet interact with Allegra 120mg Tablet?",
+      "expected_medicines": ["Augmentin 625 Duo Tablet"],
+      "required_context_fields": ["source_id", "provenance_status"],
+      "expected_abstention": true
+    },
+    {
+      "id": "ayu_neem_herb_lookup",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Neem",
+      "expected_record_ids": ["ayurveda_8edd54eb750b04b5f349c334"]
+    },
+    {
+      "id": "ayu_migraine_problem_lookup",
+      "mode": "ayurveda",
+      "field": "problem",
+      "query": "migraine",
+      "expected_record_ids": ["ayurveda_d538e3a65852d6318a681be3"]
+    },
+    {
+      "id": "ayu_dizziness_symptom_lookup",
+      "mode": "ayurveda",
+      "field": "symptom",
+      "query": "dizziness",
+      "expected_record_ids": ["ayurveda_d538e3a65852d6318a681be3"]
+    }
+  ]
+}
