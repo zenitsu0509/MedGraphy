@@ -117,50 +117,39 @@ The importer rejects unreviewed or insufficiently sourced rows. No interaction d
 
 ## Evaluation and monitoring
 
-Run the RAG benchmark against the local Neo4j graph. The default run compares vector-only retrieval with hybrid retrieval on the same Allopathy cases, and measures Ayurveda search separately. It stays local and does not call an LLM provider:
+Run the retrieval benchmark against the local Neo4j graph. It does not call a language model unless `--generate` is supplied:
 
 ```bash
-.venv/bin/python evaluate_rag.py
+.venv/bin/python evaluate_rag.py --split dev
+.venv/bin/python evaluate_rag.py --split test --latency-repeats 100 --out reports/rag_benchmark/test.json
 ```
 
-It reports Allopathy and Ayurveda retrieval with the same ranking metrics (Hit@k, Recall@k, MRR, and nDCG@k), broken down by query type. Allopathy labels resolve to stable medicine IDs from the checked-in catalog. Condition-query labels identify records whose catalog `Uses` field contains the requested phrase; this measures catalog text retrieval, not clinical appropriateness. Two negative cases measure whether out-of-scope advice and unknown product queries return any catalog result. A returned record is counted as a false positive for those cases.
+`--split dev` is for calibrating abstention thresholds. `--split test` evaluates the reserved new probes once; do not tune on those cases and then keep reporting them as held out. The original catalog examples are marked `exploratory` because their results were previously viewed. The development and test probes cover unknown products, far misspellings, non-medicine queries, symptom triage, paraphrased conditions, ingredient search, side effects, manufacturer search, and a multi-constraint query.
 
-Hybrid retrieval first checks exact product names. Otherwise it fuses condition graph matches, Neo4j Lucene full-text results, and vector candidates with weighted Reciprocal Rank Fusion (condition matches weight 2, RRF constant 60). The report includes per-case ranked candidates so query-type results can be inspected.
+The comparator includes vector-only, exact/fuzzy-name-only, Lucene full-text-only, condition-graph-only, hybrid without exact-name priority, and hybrid with exact-name priority. Named-product and other single-answer lookups report Recall@k, MRR, and nDCG@k by query type. Condition and catalog-list tasks report Precision@k and Success@k, rather than blending their large relevant sets into Recall@k. Negative queries report the abstention rate; positive queries report false-abstain rate. Hybrid versus vector-only uses a paired exact McNemar test on shared binary outcomes, described as exploratory.
 
-The benchmark reports a Wilson 95% interval for binary Hit@k and p50/p95 latency across the timed retrieval samples. For 100 timed retrievals per query, run:
+### Fresh held-out retrieval run
 
-```bash
-.venv/bin/python evaluate_rag.py --latency-repeats 100 --out reports/rag_benchmark/latest.json
-```
+On 2026-11-24, the first run of the fresh `test` split used 21 probes (15 negative, 6 positive), 100 warmed retrieval observations per query, and the local Neo4j catalog. The test cases were authored separately after the earlier test-v1 cases were moved to `dev`; do not tune on this split and continue to call it held out. These results are a small, curated development signal, not a claim of production accuracy.
 
-Latency is measured after the embedding model is loaded and warmed; it is not a cold-start or production-load benchmark. The number of measured samples is included in the JSON report. Compare retrieval methods by query type because exact product-name lookups are a different task from condition search. The candidate ranking list is exposed in the report, while the current answer-generation path still supplies one medicine context.
+| Strategy | Negative abstention | False positive results | Positive false abstention | Warm p50 / p95 |
+|---|---:|---:|---:|---:|
+| Exact/fuzzy only | 14/15 (93.3%) | 1/15 | 5/6 (83.3%) | 16.43 / 33.72 ms |
+| Lucene full-text only | 14/15 (93.3%) | 1/15 | 3/6 (50.0%) | 1.17 / 20.97 ms |
+| Condition graph only | 15/15 (100%) | 0/15 | 4/6 (66.7%) | 1.46 / 22.00 ms |
+| Vector only | 15/15 (100%) | 0/15 | 2/6 (33.3%) | 12.29 / 39.75 ms |
+| Hybrid without exact-name priority | 15/15 (100%) | 0/15 | 0/6 | 12.36 / 41.70 ms |
+| Hybrid | 15/15 (100%) | 0/15 | 0/6 | 33.44 / 57.89 ms |
 
-`eval/rag_cases.json` currently contains 41 Allopathy and 14 Ayurveda cases. They are exploratory development cases, not a held-out test set; previous retrieval results were inspected while developing this benchmark. Do not describe them as independent generalization results. Expand the reviewed test split after tuning on a separate development set. Ayurveda labels validate record lookup and provenance retention only; the source remains unverified.
+The hybrid and hybrid-without-exact-priority each retrieved the labeled result for the one case in every positive category: condition paraphrase, ingredient, side effect, manufacturer, multi-constraint, and a misspelled product name. Each category has only one probe, so these 1/1 results have very wide uncertainty (95% Wilson interval 20.7–100%) and are not broad performance estimates. Hybrid’s 0/6 positive false-abstain result also has a 0–39.0% Wilson interval; the 15/15 negative abstention result has a 79.6–100% interval. For the paired hybrid/vector ranking outcomes, hybrid had 1 win, vector had 0, and 5 tied across 6 positives; exact two-sided McNemar p = 1.00. This is descriptive and not statistically significant. Hybrid’s warmed p95 was about 1.46× vector-only in this run. The JSON report also records the per-query-type latency samples, engine initialization (1,724 ms), first-unwarmed query by strategy, settings, and case-set SHA-256. Each strategy has 2,100 warmed observations (21 cases × 100 repetitions); this is repeated local retrieval timing, not an independent 2,100-query relevance sample or a load test.
 
-Latest local retrieval run (2026-11-24; one warmed run with 100 repeats per Allopathy query, 4,100 latency samples per strategy; generation disabled):
+Retrieval abstains on recommendation and urgent symptom-triage questions, unknown product-detail requests without a high-confidence name match, unsupported query classes, and vector-only candidates below `RAG_MIN_VECTOR_SIMILARITY` unless lexical or graph evidence supports the match. Fuzzy product matching uses `RAG_FUZZY_PRODUCT_SIMILARITY`. Both thresholds are recorded in the JSON report and can be set in `.env.local`. Abstention is not a clinical triage system.
 
-| Query type / strategy | Cases | Hit@5 (95% Wilson CI) | Recall@5 | MRR | nDCG@5 | p50 / p95 latency |
-|---|---:|---:|---:|---:|---:|---:|
-| Named product — Hybrid | 29 | 29/29 (88.3–100%) | 100% | 1.00 | 1.00 | — |
-| Named product — Vector-only | 29 | 25/29 (69.4–94.5%) | 86.2% | 0.77 | 0.79 | — |
-| Catalog condition phrase — Hybrid | 10 | 10/10 (72.2–100%) | 2.2% | 1.00 | 1.00 | — |
-| Catalog condition phrase — Vector-only | 10 | 9/10 (59.6–98.2%) | 1.4% | 0.90 | 0.79 | — |
-| All labeled queries — Hybrid | 39 | 39/39 (91.0–100%) | 74.9% | 1.00 | 1.00 | 21.3 / 55.0 ms |
-| All labeled queries — Vector-only | 39 | 34/39 (73.3–94.4%) | 64.5% | 0.80 | 0.79 | 18.4 / 24.8 ms |
-| Out-of-scope + unknown product — both strategies | 2 | Abstained 0/2 | — | — | — | included above |
-| Ayurveda catalog lookup | 14 | 14/14 | 100% | 1.00 | 1.00 | — |
+For timing, the report records engine initialization, one first query per strategy, and warmed p50/p95 with the sample count. `--latency-repeats 100` collects 100 warmed observations per query; per-query-type latency is also reported. These local measurements do not represent production concurrency or deployment latency.
 
-This small sample does not show a statistically clear difference between the two strategies: their aggregate Hit@5 Wilson intervals overlap. Hybrid’s named-product cases are exact-name lookups, and it returned irrelevant catalog records for both negative queries. The condition metrics measure retrieved catalog rows, not whether a medicine is clinically appropriate for a condition. Ayurveda remains a smoke test. The JSON report is generated locally at `reports/rag_benchmark/latest.json` and is intentionally excluded from Git; rerun the command above to reproduce against your local graph and data.
+The current curated cases are not a random sample. The original Allopathy cases use stable IDs from the checked-in catalog CSV; condition phrase labels indicate literal dataset matches and do not establish clinical appropriateness. Ayurveda’s 14 cases were manually selected from the local, untracked Ayurveda CSV using known problem, symptom, and herb record IDs. Their 14/14 result is a smoke test; a 95% Wilson interval is 78.5–100%, and the source data is not committed to Git.
 
-Ayurveda source provenance was retained for all 14 retrieved records in this run. This checks that source identifiers and import status survived ingestion; it does not validate the source or its claims.
-
-To include answer generation, citations, expected answer terms, abstention cases, and automated safety review flags, use the configured Groq model:
-
-```bash
-.venv/bin/python evaluate_rag.py --generate --strategy hybrid --out reports/rag_benchmark/qwen.json
-```
-
-Generation calls can incur provider usage. The harness reports citation resolution and expected-term coverage, but neither is a claim-level faithfulness metric. Claim-level support and medical correctness require human-reviewed annotations. Automated safety flags are review signals, not clinical judgments. The lower-level graph checks remain available as `.venv/bin/python evaluate_retrieval.py`.
+The latest benchmark JSON is generated locally under `reports/rag_benchmark/` and is excluded from Git. The README reports only measured splits and states their limits. Generated-answer evaluation remains separate: citation resolution and answer-term coverage do not establish claim-level faithfulness or medical correctness. The recent Groq generation attempt received HTTP 429, so no generation result is published. The lower-level graph checks remain available as `.venv/bin/python evaluate_retrieval.py`.
 
 Operational events are appended to `runtime/medgraph_events.jsonl`. The logger records ingestion outcomes, retrieval hits/misses, citation audits, interaction imports, and evaluation scores without storing raw query text or generated answers. Missing dates remain `unknown` rather than being inferred.
 

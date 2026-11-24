@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 from data_pipeline import normalize_key
 from graph_db import Neo4jConnection
-from graph_rag_query import EMBEDDING_MODEL, GraphQueryEngine
+from graph_rag_query import EMBEDDING_MODEL, FUZZY_PRODUCT_SIMILARITY, MIN_VECTOR_SIMILARITY, GraphQueryEngine
 from llm_chains import GROQ_MODEL, generate_rag_response, get_groq_client
 from monitoring import audit_citations, log_event
 
@@ -65,6 +65,8 @@ def rank_metrics(ranked_ids: list[str], expected_ids: set[str], k: int) -> dict[
     idcg = sum(1 / math.log2(rank + 1) for rank in range(1, ideal_count + 1))
     return {
         "hit_at_k": float(bool(relevant_ranks)),
+        "success_at_k": float(bool(relevant_ranks)),
+        "precision_at_k": len(set(ranked_ids[:k]) & expected_ids) / k if expected_ids else 0.0,
         "recall_at_k": len(set(ranked_ids[:k]) & expected_ids) / len(expected_ids) if expected_ids else 0.0,
         "mrr": 1 / relevant_ranks[0] if relevant_ranks else 0.0,
         "ndcg_at_k": dcg / idcg if idcg else 0.0,
@@ -90,6 +92,23 @@ def wilson_interval(successes: int, count: int, z: float = 1.96) -> list[float] 
     center = (rate + z * z / (2 * count)) / denominator
     margin = z * math.sqrt((rate * (1 - rate) / count) + (z * z / (4 * count * count))) / denominator
     return [max(0.0, center - margin), min(1.0, center + margin)]
+
+
+def exact_mcnemar_p(hybrid_only: int, vector_only: int) -> float | None:
+    """Two-sided exact McNemar p-value from discordant paired binary outcomes."""
+    discordant = hybrid_only + vector_only
+    if discordant == 0:
+        return 1.0
+    tail = sum(math.comb(discordant, i) for i in range(min(hybrid_only, vector_only) + 1)) / (2 ** discordant)
+    return min(1.0, 2 * tail)
+
+
+def case_metric_kind(case: dict[str, Any]) -> str:
+    return case.get("metric_kind") or (
+        "abstention" if case.get("expected_no_catalog_match") else
+        "condition_topk" if str(case.get("query_type", "")).startswith("condition") or case.get("query_type") == "catalog_condition_phrase" else
+        "single_answer"
+    )
 
 
 def evaluate_ayurveda(engine: GraphQueryEngine, case: dict[str, Any], k: int) -> dict[str, Any]:
@@ -151,11 +170,13 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
     metrics = rank_metrics(ranked_ids, expected_ids, k)
     expected_abstention = bool(case.get("expected_no_catalog_match"))
     query_type = case.get("query_type") or ("condition" if case.get("expected_context_contains") else ("named_product" if expected else "out_of_scope"))
+    metric_kind = case_metric_kind(case)
     required_fields = case.get("required_context_fields", [])
     missing_fields = [field for field in required_fields if not context.get(field)]
     result: dict[str, Any] = {
         "id": case["id"], "mode": "allopathy", "query": case["query"],
         "query_type": query_type, "split": case.get("split", "exploratory"),
+        "metric_kind": metric_kind,
         "strategy": strategy,
         "expected_medicines": sorted(expected), "found_medicine": name,
         "expected_medicine_ids": sorted(case.get("expected_medicine_ids", [])),
@@ -167,8 +188,9 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
         "ranked_medicines": ranked_names[:k], "ranked_medicine_ids": ranked_ids[:k],
         "context_phrase_match": bool(case.get("expected_context_contains")) and all_facts_matched,
         "expected_catalog_abstention": expected_abstention,
-        "abstention_detected": not bool(retrieved),
-        "false_positive_result": expected_abstention and bool(retrieved),
+        "abstention_detected": not bool(retrieved) or bool((retrieved or {}).get("abstained")),
+        "false_positive_result": expected_abstention and bool(retrieved) and not bool((retrieved or {}).get("abstained")),
+        "false_abstain_result": bool(expected_ids) and (not bool(retrieved) or bool((retrieved or {}).get("abstained"))),
         "context_fields_missing": missing_fields,
         "context_field_coverage": (len(required_fields) - len(missing_fields)) / len(required_fields) if required_fields else 1.0,
         "source_id": context.get("source_id"),
@@ -176,6 +198,7 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
         "provenance_status": context.get("provenance_status"),
         "retrieval_sources": context.get("retrieval_sources", []),
         "rrf_score": context.get("retrieval_score"),
+        "top_vector_similarity": (retrieved or {}).get("top_vector_similarity"),
         "retrieval_latency_ms": round(retrieval_ms, 2),
         "retrieval_latency_samples_ms": [round(value, 2) for value in latency_samples],
     }
@@ -224,53 +247,81 @@ def summarize(rows: list[dict[str, Any]], generate: bool, k: int) -> dict[str, A
         by_type = {}
         for query_type in sorted({row["query_type"] for row in subset}):
             typed = [row for row in subset if row["query_type"] == query_type]
-            relevance_labeled = [row for row in typed if row["relevance_basis"] != "unlabeled"]
-            abstention_cases = [row for row in typed if row.get("expected_catalog_abstention")]
-            by_type[query_type] = {
-                "case_count": len(typed),
-                "relevance_labeled_cases": len(relevance_labeled),
-                "hit_at_k_95ci_wilson": wilson_interval(sum(row["hit_at_k"] for row in relevance_labeled), len(relevance_labeled)),
-                "hit_at_k": statistics.mean(row["hit_at_k"] for row in relevance_labeled) if relevance_labeled else None,
-                "recall_at_k": statistics.mean(row["recall_at_k"] for row in relevance_labeled) if relevance_labeled else None,
-                "mrr": statistics.mean(row["mrr"] for row in relevance_labeled) if relevance_labeled else None,
-                "ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in relevance_labeled) if relevance_labeled else None,
-                "catalog_abstention_cases": len(abstention_cases),
-                "catalog_abstention_recall": statistics.mean(row["abstention_detected"] for row in abstention_cases) if abstention_cases else None,
-                "false_positive_results": sum(row["false_positive_result"] for row in typed),
+            latency_samples = [sample for row in typed for sample in row.get("retrieval_latency_samples_ms", [])]
+            metric_kind = typed[0]["metric_kind"]
+            if metric_kind == "abstention":
+                abstained = sum(row["abstention_detected"] for row in typed)
+                by_type[query_type] = {
+                    "metric_kind": metric_kind, "case_count": len(typed),
+                    "abstention_rate": abstained / len(typed) if typed else None,
+                    "false_positive_results": len(typed) - abstained,
+                    "latency_sample_count": len(latency_samples),
+                    "latency_p50_ms": percentile(latency_samples, .50), "latency_p95_ms": percentile(latency_samples, .95),
+                }
+                continue
+            positive = [row for row in typed if row["relevance_basis"] != "unlabeled"]
+            matched = sum(row["hit_at_k"] for row in positive)
+            metrics = {
+                "metric_kind": metric_kind, "case_count": len(positive),
+                "success_at_k": matched / len(positive) if positive else None,
+                "success_at_k_95ci_wilson": wilson_interval(int(matched), len(positive)),
+                "false_abstain_rate": statistics.mean(row["false_abstain_result"] for row in positive) if positive else None,
+                "latency_sample_count": len(latency_samples),
+                "latency_p50_ms": percentile(latency_samples, .50), "latency_p95_ms": percentile(latency_samples, .95),
             }
+            if metric_kind == "condition_topk":
+                metrics["precision_at_k"] = statistics.mean(row["precision_at_k"] for row in positive) if positive else None
+            elif metric_kind == "catalog_topk":
+                metrics["precision_at_k"] = statistics.mean(row["precision_at_k"] for row in positive) if positive else None
+            else:
+                metrics.update({
+                    "recall_at_k": statistics.mean(row["recall_at_k"] for row in positive) if positive else None,
+                    "mrr": statistics.mean(row["mrr"] for row in positive) if positive else None,
+                    "ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in positive) if positive else None,
+                })
+            by_type[query_type] = metrics
         latency_samples = [sample for row in subset for sample in row.get("retrieval_latency_samples_ms", [])]
-        expected_match_rows = [row for row in subset if not row.get("expected_catalog_abstention")]
+        negatives = [row for row in subset if row.get("expected_catalog_abstention")]
+        positives = [row for row in subset if row["relevance_basis"] != "unlabeled"]
+        first_query_rows = [row for row in subset if row.get("first_query_latency_ms") is not None]
         strategy_comparison[strategy] = {
             "case_count": len(subset),
-            "hit_at_k": statistics.mean(row["hit_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
-            "recall_at_k": statistics.mean(row["recall_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
-            "mrr": statistics.mean(row["mrr"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
-            "ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
-            "hit_at_k_95ci_wilson": wilson_interval(sum(row["hit_at_k"] for row in subset if row["relevance_basis"] != "unlabeled"), sum(row["relevance_basis"] != "unlabeled" for row in subset)),
             "query_type_metrics": by_type,
-            "mean_context_field_coverage": statistics.mean(row["context_field_coverage"] for row in expected_match_rows) if expected_match_rows else None,
-            "source_provenance_coverage": statistics.mean(bool(row["source_id"] and row["provenance_status"]) for row in expected_match_rows) if expected_match_rows else None,
+            "positive_case_count": len(positives),
+            "false_abstain_rate": statistics.mean(row["false_abstain_result"] for row in positives) if positives else None,
+            "negative_case_count": len(negatives),
+            "negative_abstention_rate": statistics.mean(row["abstention_detected"] for row in negatives) if negatives else None,
+            "false_positive_results": sum(row["false_positive_result"] for row in negatives),
+            "mean_context_field_coverage": statistics.mean(row["context_field_coverage"] for row in positives) if positives else None,
+            "source_provenance_coverage": statistics.mean(bool(row["source_id"] and row["provenance_status"]) for row in positives) if positives else None,
             "latency_sample_count": len(latency_samples),
+            "first_query_latency_ms": first_query_rows[0]["first_query_latency_ms"] if first_query_rows else None,
             "retrieval_latency_p50_ms": percentile(latency_samples, 0.50),
             "retrieval_latency_p95_ms": percentile(latency_samples, 0.95),
-            "expected_catalog_abstention_count": sum(row.get("expected_catalog_abstention", False) for row in subset),
-            "catalog_abstention_recall": statistics.mean(row["abstention_detected"] for row in subset if row.get("expected_catalog_abstention")) if any(row.get("expected_catalog_abstention") for row in subset) else None,
-            "false_positive_results": sum(row.get("false_positive_result", False) for row in subset),
         }
-    primary = strategy_comparison.get("hybrid") or strategy_comparison.get("vector-only") or {}
+    paired = {}
+    left = {row["id"]: row for row in allopathy if row["strategy"] == "hybrid" and row["relevance_basis"] != "unlabeled"}
+    right = {row["id"]: row for row in allopathy if row["strategy"] == "vector-only" and row["relevance_basis"] != "unlabeled"}
+    shared = sorted(left.keys() & right.keys())
+    if shared:
+        hybrid_only = sum(left[key]["hit_at_k"] > right[key]["hit_at_k"] for key in shared)
+        vector_only = sum(right[key]["hit_at_k"] > left[key]["hit_at_k"] for key in shared)
+        paired = {
+            "comparison": "hybrid_vs_vector-only", "paired_case_count": len(shared),
+            "hybrid_only_wins": hybrid_only, "vector_only_wins": vector_only,
+            "ties": len(shared) - hybrid_only - vector_only,
+            "exact_mcnemar_p_two_sided": exact_mcnemar_p(hybrid_only, vector_only),
+            "interpretation": "descriptive; exploratory case set, not a confirmatory significance claim",
+        }
     summary: dict[str, Any] = {
         "case_count": len(rows), "k": k,
         "allopathy_case_count": len({row["id"] for row in allopathy}),
         "allopathy_primary_strategy": "hybrid" if "hybrid" in strategy_comparison else ("vector-only" if strategy_comparison else None),
-        "allopathy_hit_at_k": primary.get("hit_at_k"),
-        "allopathy_recall_at_k": primary.get("recall_at_k"),
-        "allopathy_mrr": primary.get("mrr"),
-        "allopathy_ndcg_at_k": primary.get("ndcg_at_k"),
-        "allopathy_mean_context_field_coverage": primary.get("mean_context_field_coverage"),
-        "allopathy_source_provenance_coverage": primary.get("source_provenance_coverage"),
         "allopathy_strategy_comparison": strategy_comparison,
+        "paired_hybrid_vs_vector": paired,
         "ayurveda_case_count": len(ayurveda),
         "ayurveda_hit_at_k": statistics.mean(row["top_k_hit"] for row in ayurveda) if ayurveda else None,
+        "ayurveda_hit_at_k_95ci_wilson": wilson_interval(sum(row["top_k_hit"] for row in ayurveda), len(ayurveda)),
         "ayurveda_recall_at_k": statistics.mean(row["recall_at_k"] for row in ayurveda) if ayurveda else None,
         "ayurveda_mrr": statistics.mean(row["reciprocal_rank"] for row in ayurveda) if ayurveda else None,
         "ayurveda_ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in ayurveda) if ayurveda else None,
@@ -293,27 +344,45 @@ def summarize(rows: list[dict[str, Any]], generate: bool, k: int) -> dict[str, A
     return summary
 
 
-def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = False, strategy: str = "compare", latency_repeats: int = 1) -> dict[str, Any]:
+def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = False, strategy: str = "compare", latency_repeats: int = 1, split: str = "all") -> dict[str, Any]:
     load_dotenv(ROOT / ".env.local")
     load_dotenv(ROOT / ".env")
     cases = json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
+    if split != "all":
+        cases = [case for case in cases if case.get("split", "exploratory") == split]
+    if not cases:
+        raise ValueError(f"No cases found for split {split!r}")
+    engine_started = time.perf_counter()
     if generate:
         # Fail early before doing retrieval work if no provider key is available.
         client = get_groq_client()
         del client
     engine = GraphQueryEngine(db=Neo4jConnection())
+    engine_init_ms = round((time.perf_counter() - engine_started) * 1000, 2)
     rows = []
+    first_query_by_strategy = {}
+    first_case = None
     try:
-        # Keep model loading and first-call warm-up out of per-query retrieval latency.
         if any(case["mode"] == "allopathy" for case in cases):
+            allopathy_cases = [case for case in cases if case["mode"] == "allopathy"]
+            first_case = next((case for case in allopathy_cases if case_metric_kind(case) == "single_answer"), allopathy_cases[0])
+            selected_strategies = ("vector-only", "exact-fuzzy-only", "fulltext-only", "condition-only", "hybrid-no-exact", "hybrid") if strategy == "compare" else (strategy,)
+            for selected_strategy in selected_strategies:
+                cold_started = time.perf_counter()
+                engine.retrieve_context_for_rag(first_case["query"], strategy=selected_strategy)
+                first_query_by_strategy[selected_strategy] = round((time.perf_counter() - cold_started) * 1000, 2)
+            # Model is loaded at engine initialization; these timings include first query embedding/cache effects.
             engine.get_embedding("MEDGraphy retrieval benchmark warm-up")
         for case in cases:
             if case["mode"] == "ayurveda":
                 rows.append(evaluate_ayurveda(engine, case, k))
             elif case["mode"] == "allopathy":
-                strategies = ("vector-only", "hybrid") if strategy == "compare" else (strategy,)
+                strategies = ("vector-only", "exact-fuzzy-only", "fulltext-only", "condition-only", "hybrid-no-exact", "hybrid") if strategy == "compare" else (strategy,)
                 for selected_strategy in strategies:
-                    rows.append(evaluate_allopathy(engine, case, generate, selected_strategy, k, latency_repeats))
+                    evaluated = evaluate_allopathy(engine, case, generate, selected_strategy, k, latency_repeats)
+                    if first_case and case["id"] == first_case["id"]:
+                        evaluated["first_query_latency_ms"] = first_query_by_strategy.get(selected_strategy)
+                    rows.append(evaluated)
             else:
                 raise ValueError(f"Unknown benchmark mode: {case['mode']}")
     finally:
@@ -323,20 +392,25 @@ def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = F
         "case_set_sha256": hashlib.sha256(cases_path.read_bytes()).hexdigest(),
         "run_config": {
             "embedding_model": EMBEDDING_MODEL,
+            "min_vector_similarity": MIN_VECTOR_SIMILARITY,
+            "fuzzy_product_similarity": FUZZY_PRODUCT_SIMILARITY,
             "embedding_warmed_before_timing": True,
+            "engine_initialization_ms": engine_init_ms,
+            "first_unwarmed_query_latency_by_strategy_ms": first_query_by_strategy,
             "generation_provider": "Groq" if generate else None,
             "generation_model": GROQ_MODEL if generate else None,
             "retrieval_k": k,
             "retrieval_strategy": strategy,
+            "case_split": split,
             "latency_repeats_per_query": latency_repeats,
             "groq_key_configured": bool(os.getenv("GROQ_API_KEY")),
         },
         "retrieval_k": k, "summary": summarize(rows, generate, k), "cases": rows,
         "limitations": [
-            "The curated set is exploratory, is not a held-out test split, and does not establish clinical accuracy.",
+            f"The selected {split!r} case split is small and curated; it does not establish clinical accuracy or broad real-world performance.",
             "Allopathy labels use stable medicine IDs; condition IDs are derived from literal phrase matches in the catalog Uses field and remain exploratory labels.",
             "The Allopathy response uses one context record; ranking metrics reflect the available candidate list and may be degenerate for exact-name lookups.",
-            "Latency is sampled after model warm-up; report sample count and repeat with --latency-repeats 100 for a more stable local p50/p95. This is not a cold-start or production load test.",
+            "Engine initialization, first-query timings, and warmed p50/p95 are separate local measurements; they are not a production load test.",
             "Ayurveda is benchmarked as catalog retrieval only; its imported text remains unverified.",
             "Citation presence and automated safety flags do not prove that claims are supported or safe.",
         ],
@@ -345,7 +419,7 @@ def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = F
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
     summary = report["summary"]
     log_event("rag_benchmark_completed", case_count=len(rows), generate=generate, strategy=strategy,
-              allopathy_hit_at_k=summary["allopathy_hit_at_k"],
+              allopathy_strategy_count=len(summary["allopathy_strategy_comparison"]),
               ayurveda_recall_at_k=summary["ayurveda_recall_at_k"], report_path=str(report_path))
     return report
 
@@ -356,14 +430,15 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--k", type=int, default=5, help="Ayurveda retrieval cutoff (Allopathy RAG uses its production top-1 strategy)")
     parser.add_argument("--latency-repeats", type=int, default=1, help="Measure each Allopathy query this many times after model warm-up")
+    parser.add_argument("--split", choices=("all", "dev", "test", "exploratory"), default="all", help="Evaluate a named case split; existing benchmark cases remain exploratory")
     parser.add_argument("--generate", action="store_true", help="Call the configured Groq model for Allopathy cases; may incur provider usage")
-    parser.add_argument("--strategy", choices=("compare", "hybrid", "vector-only"), default="compare", help="Compare both retrievers, or run one strategy")
+    parser.add_argument("--strategy", choices=("compare", "hybrid", "hybrid-no-exact", "vector-only", "fulltext-only", "condition-only", "exact-fuzzy-only"), default="compare", help="Compare retrieval baselines, or run one strategy")
     args = parser.parse_args()
     if args.k < 1 or args.latency_repeats < 1:
         parser.error("--k and --latency-repeats must be positive")
     if args.generate and args.strategy == "compare":
-        parser.error("--generate requires --strategy hybrid or --strategy vector-only to avoid duplicate provider calls")
-    report = evaluate(args.cases, args.out, args.k, args.generate, args.strategy, args.latency_repeats)
+        parser.error("--generate requires one specific retrieval strategy to avoid duplicate provider calls")
+    report = evaluate(args.cases, args.out, args.k, args.generate, args.strategy, args.latency_repeats, args.split)
     print(json.dumps({"report": str(args.out), "summary": report["summary"]}, ensure_ascii=False, indent=2))
 
 
