@@ -237,7 +237,8 @@ def search_medicines(request: Request, q: str = Query(min_length=2, max_length=1
             WHERE toLower(m.name) CONTAINS toLower($q)
             OPTIONAL MATCH (m)-[:MANUFACTURED_BY]->(mf:Manufacturer)
             RETURN m.medicine_id AS medicine_id, m.name AS name,
-                   m.composition AS composition, head(collect(DISTINCT mf.name)) AS manufacturer
+                   m.composition AS composition, m.image_url AS image_url,
+                   head(collect(DISTINCT mf.name)) AS manufacturer
             ORDER BY CASE WHEN toLower(m.name)=toLower($q) THEN 0 ELSE 1 END,
                      m.name, m.composition
             LIMIT $limit

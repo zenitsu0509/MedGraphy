@@ -808,6 +808,7 @@
     }
 
     function safeHref(value) {
+      if (typeof value !== 'string' || !value.trim()) return null;
       try {
         const url = new URL(value, window.location.origin);
         return ['https:', 'http:'].includes(url.protocol) ? url.href : null;
@@ -845,6 +846,7 @@
         img.src = image;
         img.alt = 'Catalog image for ' + item.name;
         img.loading = 'lazy';
+        img.addEventListener('error', () => img.remove(), { once: true });
         card.append(img);
       }
       if (item.composition) el('p', 'Composition: ' + item.composition, card);
