@@ -56,6 +56,14 @@ def term_matches(answer: str, term: str) -> bool:
     return normalize_key(term) in normalize_key(answer)
 
 
+def expected_name_matches(found_name: str | None, expected_names: list[str]) -> bool:
+    """Compare catalog names after the same whitespace/punctuation normalization as IDs."""
+    if not found_name:
+        return False
+    found_key = normalize_key(found_name)
+    return bool(found_key) and found_key in {normalize_key(name) for name in expected_names if name}
+
+
 def evaluate_ayurveda(engine: GraphQueryEngine, case: dict[str, Any], k: int) -> dict[str, Any]:
     started = time.perf_counter()
     field = case["field"]
@@ -98,7 +106,7 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
         if normalize_key(phrase) in normalize_key(context.get(field, ""))
     }
     all_facts_matched = len(matched_facts) == len(case.get("expected_context_contains", {}))
-    name_matched = bool(name in expected) if expected else False
+    name_matched = expected_name_matches(name, list(expected))
     top1_hit = name_matched or (bool(case.get("expected_context_contains")) and all_facts_matched)
     required_fields = case.get("required_context_fields", [])
     missing_fields = [field for field in required_fields if not context.get(field)]

@@ -21,6 +21,32 @@ docker compose --env-file .env.local up -d neo4j
 
 If `.venv` does not exist yet, create it with `python3.12 -m venv .venv` first. `.env.local` is ignored by Git.
 
+## Run the full stack with Docker
+
+The Docker image runs FastAPI and serves the HTML frontend from the same container; Docker Compose starts that app alongside Neo4j. After creating `.env.local` from the template above and setting a Neo4j password, start both services with:
+
+```bash
+docker compose --env-file .env.local up --build -d
+```
+
+Open [http://localhost:8000](http://localhost:8000). The first app start imports the bundled Allopathy catalog and builds its embeddings if the Neo4j database has no medicine records; this can take several minutes and downloads the embedding model. On later starts it checks/creates the retrieval indexes. Existing Neo4j data is kept in the named Docker volumes. Neo4j Browser remains available at [http://localhost:7474](http://localhost:7474).
+
+The local Ayurveda directory is mounted read-only into the app container, so images and a locally supplied CSV can be used without being copied into the image or Git. Ayurveda records are not automatically ingested; follow the manual audit/import steps below after the app is running:
+
+```bash
+docker compose --env-file .env.local exec app python ingest_ayurveda.py --ingest
+```
+
+View service status and logs, or stop the services while retaining data:
+
+```bash
+docker compose --env-file .env.local ps
+docker compose --env-file .env.local logs -f app
+docker compose --env-file .env.local down
+```
+
+`down` preserves Neo4j volumes. Only `docker compose down -v` deletes the database volumes. Set `AUTO_INGEST=false` in `.env.local` to disable automatic Allopathy import on an empty database.
+
 Local `.env` files are ignored; `.env.local.example` and `.env.aws.example` are configuration templates. The Ayurveda text CSV, optional workbook, and leaf-image files are excluded from Git because of their size. The leaf images can be downloaded from [Medicinal Leaf Dataset — Mendeley Data](https://data.mendeley.com/datasets/nnytj2v3n5/1), which lists a CC BY 4.0 license; see [`data/ayurveda/README.md`](data/ayurveda/README.md) for the exact extraction path and attribution note. That Mendeley link is only for the leaf images; the separate Ayurveda text CSV has no verified upstream download URL or license documented in this repository and must be supplied locally at `data/ayurveda/ayurveda_dataset.csv` for ingestion.
 
 To populate a new local Neo4j database with the medicine catalog and vector embeddings:
@@ -99,15 +125,17 @@ Run the RAG benchmark against the local Neo4j graph. The default run compares ve
 
 It reports Allopathy top-1 relevance, context/provenance coverage, and mean retrieval latency for each strategy, plus Ayurveda Recall@k/MRR and provenance retention. The hybrid path gives exact product-name matches priority; otherwise it fuses graph condition matches, Neo4j Lucene full-text results, and vector candidates with weighted Reciprocal Rank Fusion (condition matches weight 2, RRF constant 60). The curated cases are in `eval/rag_cases.json`; output defaults to `reports/rag_benchmark/latest.json`. Run one strategy with `--strategy hybrid` or `--strategy vector-only`.
 
-Latest local retrieval-only benchmark (six Allopathy cases and three Ayurveda cases, warmed embedding model):
+Latest local retrieval-only benchmark (2026-11-24; 39 Allopathy cases and 14 Ayurveda cases; warmed embedding model):
 
-| Strategy | Allopathy top-1 relevance | Context field coverage | Source metadata coverage | Mean retrieval latency |
+| Strategy | Retrieval relevance | Context field coverage | Source metadata coverage | Mean retrieval latency |
 |---|---:|---:|---:|---:|
-| Vector-only | 3/6 (50%) | 6/6 (100%) | 6/6 (100%) | 47.0 ms |
-| Hybrid | 6/6 (100%) | 6/6 (100%) | 6/6 (100%) | 44.4 ms |
-| Ayurveda search, Recall@5 | 3/3 (100%) | — | 3/3 (100%) | MRR 1.00 |
+| Vector-only | 20/39 (51.3%) | 39/39 (100%) | 39/39 (100%) | 26.0 ms |
+| Hybrid | 39/39 (100%) | 39/39 (100%) | 39/39 (100%) | 32.4 ms |
+| Ayurveda search | Recall@5: 14/14 (100%); MRR: 1.00 | — | Provenance retained: 14/14 (100%) | — |
 
-This is a small development benchmark against the current local graph; the condition cases count a result as relevant when its retrieved catalog text contains the expected use phrase. It measures retrieval only, not answer faithfulness, medical correctness, or production-scale latency. Expand the reviewed case set before making broad performance claims.
+These are measured results from `.venv/bin/python evaluate_rag.py` against one local Neo4j graph on 2026-11-24, with generation disabled. Each Allopathy query is evaluated once per strategy (78 rows total); the 14 Ayurveda cases are evaluated separately. Product cases are derived from the checked-in catalog CSV, and condition cases count as relevant when the retrieved catalog text contains the expected use phrase. Product-name relevance comparison normalizes case, spacing, and punctuation. The cases and evaluation code are in the repository, so Allopathy results can be rerun after importing the same catalog and creating the retrieval indexes. Ayurveda data is excluded from Git and has no verified download URL; matching its score requires the same local CSV, the corresponding Ayurveda graph import, and the case IDs in `eval/rag_cases.json`.
+
+Context-field coverage means required context fields were present; source-metadata coverage means source metadata fields were present. Neither means the source is authoritative: the Allopathy source manifest is explicitly marked `incomplete`, and Ayurveda records remain `unverified_preview`. The latency column is a single warmed local run and is sensitive to hardware, database cache, and load; do not treat it as a repeatable performance comparison. This small, catalog-derived retrieval benchmark measures neither answer faithfulness nor medical correctness and does not establish clinical accuracy or production-scale performance.
 
 To include answer generation, citations, expected answer terms, abstention cases, and automated safety review flags, use the configured Groq model:
 

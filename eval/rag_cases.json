@@ -1,50 +1,88 @@
 {
-  "description": "Curated retrieval checks for catalog grounding. These labels check whether the app retrieves the annotated dataset record; they do not validate clinical claims.",
+  "description": "Curated and source-derived retrieval checks. Allopathy labels verify exact product names or expected catalog text; Ayurveda labels verify CSV-derived record retrieval only. These cases do not validate clinical recommendations.",
   "cases": [
     {
       "id": "rag_augmentin_composition",
       "mode": "allopathy",
       "query": "What composition is listed for Augmentin 625 Duo Tablet?",
-      "expected_medicines": ["Augmentin 625 Duo Tablet"],
-      "required_context_fields": ["composition", "source_id", "provenance_status"],
-      "required_answer_terms": ["amoxycillin", "clavulanic acid"]
+      "expected_medicines": [
+        "Augmentin 625 Duo Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ],
+      "required_answer_terms": [
+        "amoxycillin",
+        "clavulanic acid"
+      ]
     },
     {
       "id": "rag_allegra_side_effects",
       "mode": "allopathy",
       "query": "What side effects are listed for Allegra 120mg Tablet?",
-      "expected_medicines": ["Allegra 120mg Tablet"],
-      "required_context_fields": ["side_effects_text", "source_id", "provenance_status"],
-      "required_answer_terms": ["headache", "drowsiness"]
+      "expected_medicines": [
+        "Allegra 120mg Tablet"
+      ],
+      "required_context_fields": [
+        "side_effects_text",
+        "source_id",
+        "provenance_status"
+      ],
+      "required_answer_terms": [
+        "headache",
+        "drowsiness"
+      ]
     },
     {
       "id": "rag_cough_condition",
       "mode": "allopathy",
       "query": "Which catalog product lists cough with mucus as a use?",
-      "expected_context_contains": {"uses_text": "cough with mucus"},
-      "required_context_fields": ["uses_text", "source_id"]
+      "expected_context_contains": {
+        "uses_text": "cough with mucus"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
     },
     {
       "id": "rag_reflux_condition",
       "mode": "allopathy",
       "query": "Which medicine is listed for acid reflux?",
-      "expected_context_contains": {"uses_text": "acid reflux"},
-      "required_context_fields": ["uses_text", "source_id"]
+      "expected_context_contains": {
+        "uses_text": "acid reflux"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
     },
     {
       "id": "rag_missing_dose",
       "mode": "allopathy",
       "query": "What dose should I take of Augmentin 625 Duo Tablet?",
-      "expected_medicines": ["Augmentin 625 Duo Tablet"],
-      "required_context_fields": ["composition", "provenance_status"],
+      "expected_medicines": [
+        "Augmentin 625 Duo Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "provenance_status"
+      ],
       "expected_abstention": true
     },
     {
       "id": "rag_no_interaction_evidence",
       "mode": "allopathy",
       "query": "Does Augmentin 625 Duo Tablet interact with Allegra 120mg Tablet?",
-      "expected_medicines": ["Augmentin 625 Duo Tablet"],
-      "required_context_fields": ["source_id", "provenance_status"],
+      "expected_medicines": [
+        "Augmentin 625 Duo Tablet"
+      ],
+      "required_context_fields": [
+        "source_id",
+        "provenance_status"
+      ],
       "expected_abstention": true
     },
     {
@@ -52,21 +90,547 @@
       "mode": "ayurveda",
       "field": "herb",
       "query": "Neem",
-      "expected_record_ids": ["ayurveda_8edd54eb750b04b5f349c334"]
+      "expected_record_ids": [
+        "ayurveda_8edd54eb750b04b5f349c334"
+      ]
     },
     {
       "id": "ayu_migraine_problem_lookup",
       "mode": "ayurveda",
       "field": "problem",
       "query": "migraine",
-      "expected_record_ids": ["ayurveda_d538e3a65852d6318a681be3"]
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
     },
     {
       "id": "ayu_dizziness_symptom_lookup",
       "mode": "ayurveda",
       "field": "symptom",
       "query": "dizziness",
-      "expected_record_ids": ["ayurveda_d538e3a65852d6318a681be3"]
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
+    },
+    {
+      "id": "product_sample_01",
+      "mode": "allopathy",
+      "query": "What composition is listed for A Doxid 100mg Capsule?",
+      "expected_medicines": [
+        "A Doxid 100mg Capsule"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_02",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Amphy IBL 1000 Tablet?",
+      "expected_medicines": [
+        "Amphy IBL 1000 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_03",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Betasalic Ointment.",
+      "expected_medicines": [
+        "Betasalic Ointment"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_04",
+      "mode": "allopathy",
+      "query": "What composition is listed for Elocon Ointment?",
+      "expected_medicines": [
+        "Elocon Ointment"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_05",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Fibator LS Tablet?",
+      "expected_medicines": [
+        "Fibator LS Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_06",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Glotret 20 Tablet.",
+      "expected_medicines": [
+        "Glotret 20 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_07",
+      "mode": "allopathy",
+      "query": "What composition is listed for Indocap Capsule?",
+      "expected_medicines": [
+        "Indocap Capsule"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_08",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Lamifin Tablet?",
+      "expected_medicines": [
+        "Lamifin Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_09",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Lupiflex 4 Tablet.",
+      "expected_medicines": [
+        "Lupiflex 4 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_10",
+      "mode": "allopathy",
+      "query": "What composition is listed for Migiplex 40mg/10mg Tablet?",
+      "expected_medicines": [
+        "Migiplex 40mg/10mg Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_11",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Neo-Mercazole 10 Tablet?",
+      "expected_medicines": [
+        "Neo-Mercazole 10 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_12",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Oleptal OD 450 Tablet SR.",
+      "expected_medicines": [
+        "Oleptal OD 450 Tablet SR"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_13",
+      "mode": "allopathy",
+      "query": "What composition is listed for Paraband 650mg Tablet?",
+      "expected_medicines": [
+        "Paraband 650mg Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_14",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Pyrope NT  75mg/10mg Tablet?",
+      "expected_medicines": [
+        "Pyrope NT  75mg/10mg Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_15",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Roseday-F 20 Tablet.",
+      "expected_medicines": [
+        "Roseday-F 20 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_16",
+      "mode": "allopathy",
+      "query": "What composition is listed for Stator 20 Tablet?",
+      "expected_medicines": [
+        "Stator 20 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_17",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for Telvas-LN 80 Tablet?",
+      "expected_medicines": [
+        "Telvas-LN 80 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_18",
+      "mode": "allopathy",
+      "query": "Give the catalog composition for Trivedon MR Tablet.",
+      "expected_medicines": [
+        "Trivedon MR Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_19",
+      "mode": "allopathy",
+      "query": "What composition is listed for Voxidep 25 Tablet?",
+      "expected_medicines": [
+        "Voxidep 25 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "product_sample_20",
+      "mode": "allopathy",
+      "query": "Which ingredients are listed for leocan 150mg Tablet?",
+      "expected_medicines": [
+        "leocan 150mg Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "near_variant_01",
+      "mode": "allopathy",
+      "query": "What composition is listed for Allegra 180mg Tablet?",
+      "expected_medicines": [
+        "Allegra 180mg Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "near_variant_02",
+      "mode": "allopathy",
+      "query": "What composition is listed for Allegra-M Tablet?",
+      "expected_medicines": [
+        "Allegra-M Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "near_variant_03",
+      "mode": "allopathy",
+      "query": "What composition is listed for Augmentin 1000 Duo Tablet?",
+      "expected_medicines": [
+        "Augmentin 1000 Duo Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "near_variant_04",
+      "mode": "allopathy",
+      "query": "What composition is listed for Augmentin 375 Tablet?",
+      "expected_medicines": [
+        "Augmentin 375 Tablet"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "near_variant_05",
+      "mode": "allopathy",
+      "query": "What composition is listed for Augmentin Duo Oral Suspension?",
+      "expected_medicines": [
+        "Augmentin Duo Oral Suspension"
+      ],
+      "required_context_fields": [
+        "composition",
+        "source_id",
+        "provenance_status"
+      ]
+    },
+    {
+      "id": "condition_bacterial_infections",
+      "mode": "allopathy",
+      "query": "Which catalog products list Bacterial infections as a use?",
+      "expected_context_contains": {
+        "uses_text": "Bacterial infections"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_acne",
+      "mode": "allopathy",
+      "query": "Which catalog products list Acne as a use?",
+      "expected_context_contains": {
+        "uses_text": "Acne"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_hypertension_high_blood_pressure",
+      "mode": "allopathy",
+      "query": "Which catalog products list Hypertension (high blood pressure) as a use?",
+      "expected_context_contains": {
+        "uses_text": "Hypertension (high blood pressure)"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_high_cholesterol",
+      "mode": "allopathy",
+      "query": "Which catalog products list High cholesterol as a use?",
+      "expected_context_contains": {
+        "uses_text": "High cholesterol"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_type_2_diabetes_mellitus",
+      "mode": "allopathy",
+      "query": "Which catalog products list Type 2 diabetes mellitus as a use?",
+      "expected_context_contains": {
+        "uses_text": "Type 2 diabetes mellitus"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_fungal_infections",
+      "mode": "allopathy",
+      "query": "Which catalog products list Fungal infections as a use?",
+      "expected_context_contains": {
+        "uses_text": "Fungal infections"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_allergic_conditions",
+      "mode": "allopathy",
+      "query": "Which catalog products list Allergic conditions as a use?",
+      "expected_context_contains": {
+        "uses_text": "Allergic conditions"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "condition_asthma",
+      "mode": "allopathy",
+      "query": "Which catalog products list Asthma as a use?",
+      "expected_context_contains": {
+        "uses_text": "Asthma"
+      },
+      "required_context_fields": [
+        "uses_text",
+        "source_id"
+      ]
+    },
+    {
+      "id": "ayu_herb_ashwagandha",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Ashwagandha",
+      "expected_record_ids": [
+        "ayurveda_c7895dff265f219e99c10293"
+      ]
+    },
+    {
+      "id": "ayu_herb_turmeric",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Turmeric",
+      "expected_record_ids": [
+        "ayurveda_48c30e667ade3ccac6f21f7f"
+      ]
+    },
+    {
+      "id": "ayu_herb_ginger",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Ginger",
+      "expected_record_ids": [
+        "ayurveda_ba240267ec629b761c407d89"
+      ]
+    },
+    {
+      "id": "ayu_herb_triphala",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Triphala",
+      "expected_record_ids": [
+        "ayurveda_c7895dff265f219e99c10293"
+      ]
+    },
+    {
+      "id": "ayu_herb_licorice",
+      "mode": "ayurveda",
+      "field": "herb",
+      "query": "Licorice",
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
+    },
+    {
+      "id": "ayu_problem_arthritis",
+      "mode": "ayurveda",
+      "field": "problem",
+      "query": "arthritis",
+      "expected_record_ids": [
+        "ayurveda_8edd54eb750b04b5f349c334"
+      ]
+    },
+    {
+      "id": "ayu_problem_migraine",
+      "mode": "ayurveda",
+      "field": "problem",
+      "query": "migraine",
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
+    },
+    {
+      "id": "ayu_problem_jaundice",
+      "mode": "ayurveda",
+      "field": "problem",
+      "query": "jaundice",
+      "expected_record_ids": [
+        "ayurveda_c7895dff265f219e99c10293"
+      ]
+    },
+    {
+      "id": "ayu_symptom_dizziness",
+      "mode": "ayurveda",
+      "field": "symptom",
+      "query": "dizziness",
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
+    },
+    {
+      "id": "ayu_symptom_anxiety",
+      "mode": "ayurveda",
+      "field": "symptom",
+      "query": "anxiety",
+      "expected_record_ids": [
+        "ayurveda_d538e3a65852d6318a681be3"
+      ]
+    },
+    {
+      "id": "ayu_symptom_fever",
+      "mode": "ayurveda",
+      "field": "symptom",
+      "query": "fever",
+      "expected_record_ids": [
+        "ayurveda_2c6523ace3a46e13c0b77c1a"
+      ]
     }
   ]
 }

@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.env
+.env.*
+!.env.local.example
+!.env.aws.example
+reports
+runtime
+tests
+fix_firewall.bat
+data/ayurveda/ayurveda_dataset.csv
+data/ayurveda/ayurveda_dataset.xlsx
+data/ayurveda/Medicinal Leaf Dataset

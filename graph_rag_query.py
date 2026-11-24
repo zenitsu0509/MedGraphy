@@ -3,6 +3,8 @@ import re
 import time
 from difflib import SequenceMatcher, get_close_matches
 from functools import lru_cache
+from typing import Iterable
+from data_pipeline import normalize_key
 from graph_db import Neo4jConnection
 from sentence_transformers import SentenceTransformer
 from monitoring import hash_query, log_event, source_freshness
@@ -13,6 +15,35 @@ VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "medicine_embeddings")
 FULLTEXT_INDEX_NAME = os.getenv("FULLTEXT_INDEX_NAME", "medicine_catalog_fulltext")
 if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", FULLTEXT_INDEX_NAME):
     raise ValueError("FULLTEXT_INDEX_NAME must be a simple Neo4j identifier")
+
+
+def reciprocal_rank_fusion(
+    rankings: Iterable[tuple[str, Iterable[dict], float]],
+    rank_constant: int = 60,
+    limit: int | None = None,
+) -> list[dict]:
+    """Fuse ordered result lists by ID using weighted Reciprocal Rank Fusion."""
+    if rank_constant < 0:
+        raise ValueError("rank_constant must be non-negative")
+    fused: dict[str, dict] = {}
+    for source, candidates, weight in rankings:
+        if weight < 0:
+            raise ValueError("source weights must be non-negative")
+        for rank, candidate in enumerate(candidates, start=1):
+            identity = candidate.get("medicine_id") or candidate.get("name")
+            if not identity:
+                continue
+            item = fused.setdefault(identity, {
+                "medicine_id": candidate.get("medicine_id"),
+                "name": candidate.get("name"),
+                "rrf_score": 0.0,
+                "sources": [],
+            })
+            item["rrf_score"] += weight / (rank_constant + rank)
+            if source not in item["sources"]:
+                item["sources"].append(source)
+    ranked = sorted(fused.values(), key=lambda item: (-item["rrf_score"], (item["name"] or "").casefold()))
+    return ranked[:limit] if limit is not None else ranked
 
 
 @lru_cache(maxsize=1)
@@ -220,6 +251,19 @@ class GraphQueryEngine:
         """, {"cond": condition, "limit": limit}, db="neo4j")
         return rows or []
 
+    def _exact_named_medicine(self, user_query: str) -> dict | None:
+        """Find a catalog product mention using its normalized display name."""
+        rows = self.db.query("""
+            MATCH (m:Medicine)
+            WHERE ($normalized_query <> '' AND m.normalized_name IS NOT NULL
+                   AND $normalized_query CONTAINS m.normalized_name)
+               OR (m.normalized_name IS NULL AND toLower($query) CONTAINS toLower(m.name))
+            RETURN m.name AS name, m.medicine_id AS medicine_id
+            ORDER BY size(coalesce(m.normalized_name, toLower(m.name))) DESC, m.name
+            LIMIT 1
+        """, {"query": user_query.strip(), "normalized_query": normalize_key(user_query)}, db="neo4j") or []
+        return dict(rows[0]) if rows else None
+
     
     def _best_medicine_for_condition(self, condition: str) -> dict | None:
         """Return the most lexically specific catalog match without review-score ranking."""
@@ -246,8 +290,9 @@ class GraphQueryEngine:
             cond = cond.strip()
             if cond:
                 return cond
-        if " lists " in q:
-            tail = q.split(" lists ", 1)[1]
+        list_match = re.search(r"\blists?\s+", q)
+        if list_match:
+            tail = q[list_match.end():]
             tail = re.split(r"\s+as\s+(?:a\s+)?use\b|[?.,;:]", tail, maxsplit=1)[0]
             cond = tail.strip()
             if cond.startswith("a "):
@@ -279,47 +324,26 @@ class GraphQueryEngine:
 
         if strategy == "vector-only":
             vector_rows = self.vector_similarity_search(user_query, limit=1)
-            for candidate in vector_rows:
-                identity = candidate.get("medicine_id") or candidate.get("name")
-                if identity:
-                    candidates_by_id[identity] = {
-                        "medicine_id": candidate.get("medicine_id"), "name": candidate.get("name"),
-                        "rrf_score": 1.0, "sources": ["vector"],
-                    }
+            ranked = reciprocal_rank_fusion([("vector", vector_rows, 1.0)], rank_constant=0, limit=1)
+            candidates_by_id = {item.get("medicine_id") or item.get("name"): item for item in ranked}
         else:
             # Exact named products should win over semantically similar records.
-            named = self.db.query("""
-                MATCH (m:Medicine)
-                WHERE toLower($query) CONTAINS toLower(m.name)
-                RETURN m.name AS name, m.medicine_id AS medicine_id
-                ORDER BY size(m.name) DESC, m.name
-                LIMIT 1
-            """, {"query": user_query.strip()}, db="neo4j") or []
+            named = self._exact_named_medicine(user_query)
             if named:
-                top_medicine_name = named[0]["name"]
-                top_medicine_id = named[0].get("medicine_id")
+                top_medicine_name = named["name"]
+                top_medicine_id = named.get("medicine_id")
                 retrieval_sources = ["exact_name"]
                 retrieval_score = 1.0
 
-            def add_ranked(source: str, candidates: list[dict], weight: float = 1.0) -> None:
-                for rank, candidate in enumerate(candidates, start=1):
-                    identity = candidate.get("medicine_id") or candidate.get("name")
-                    if not identity:
-                        continue
-                    current = candidates_by_id.setdefault(identity, {
-                        "medicine_id": candidate.get("medicine_id"), "name": candidate.get("name"),
-                        "rrf_score": 0.0, "sources": [],
-                    })
-                    current["rrf_score"] += weight / (60 + rank)
-                    if source not in current["sources"]:
-                        current["sources"].append(source)
-
             if not top_medicine_name:
+                rankings = []
                 condition = self._extract_condition_from_query(user_query)
                 if condition:
-                    add_ranked("condition_graph", self.condition_candidates(condition, limit=20), weight=2.0)
-                add_ranked("fulltext", self.fulltext_search(user_query, limit=20))
-                add_ranked("vector", self.vector_similarity_search(user_query, limit=20))
+                    rankings.append(("condition_graph", self.condition_candidates(condition, limit=20), 2.0))
+                rankings.append(("fulltext", self.fulltext_search(user_query, limit=20), 1.0))
+                rankings.append(("vector", self.vector_similarity_search(user_query, limit=20), 1.0))
+                ranked = reciprocal_rank_fusion(rankings, rank_constant=60, limit=20)
+                candidates_by_id = {item.get("medicine_id") or item.get("name"): item for item in ranked}
             if top_medicine_name:
                 candidates_by_id = {
                     top_medicine_id or top_medicine_name: {
