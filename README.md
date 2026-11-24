@@ -123,27 +123,44 @@ Run the RAG benchmark against the local Neo4j graph. The default run compares ve
 .venv/bin/python evaluate_rag.py
 ```
 
-It reports Allopathy top-1 relevance, context/provenance coverage, and mean retrieval latency for each strategy, plus Ayurveda Recall@k/MRR and provenance retention. The hybrid path gives exact product-name matches priority; otherwise it fuses graph condition matches, Neo4j Lucene full-text results, and vector candidates with weighted Reciprocal Rank Fusion (condition matches weight 2, RRF constant 60). The curated cases are in `eval/rag_cases.json`; output defaults to `reports/rag_benchmark/latest.json`. Run one strategy with `--strategy hybrid` or `--strategy vector-only`.
+It reports Allopathy and Ayurveda retrieval with the same ranking metrics (Hit@k, Recall@k, MRR, and nDCG@k), broken down by query type. Allopathy labels resolve to stable medicine IDs from the checked-in catalog. Condition-query labels identify records whose catalog `Uses` field contains the requested phrase; this measures catalog text retrieval, not clinical appropriateness. Two negative cases measure whether out-of-scope advice and unknown product queries return any catalog result. A returned record is counted as a false positive for those cases.
 
-Latest local retrieval-only benchmark (2026-11-24; 39 Allopathy cases and 14 Ayurveda cases; warmed embedding model):
+Hybrid retrieval first checks exact product names. Otherwise it fuses condition graph matches, Neo4j Lucene full-text results, and vector candidates with weighted Reciprocal Rank Fusion (condition matches weight 2, RRF constant 60). The report includes per-case ranked candidates so query-type results can be inspected.
 
-| Strategy | Retrieval relevance | Context field coverage | Source metadata coverage | Mean retrieval latency |
-|---|---:|---:|---:|---:|
-| Vector-only | 20/39 (51.3%) | 39/39 (100%) | 39/39 (100%) | 26.0 ms |
-| Hybrid | 39/39 (100%) | 39/39 (100%) | 39/39 (100%) | 32.4 ms |
-| Ayurveda search | Recall@5: 14/14 (100%); MRR: 1.00 | — | Provenance retained: 14/14 (100%) | — |
+The benchmark reports a Wilson 95% interval for binary Hit@k and p50/p95 latency across the timed retrieval samples. For 100 timed retrievals per query, run:
 
-These are measured results from `.venv/bin/python evaluate_rag.py` against one local Neo4j graph on 2026-11-24, with generation disabled. Each Allopathy query is evaluated once per strategy (78 rows total); the 14 Ayurveda cases are evaluated separately. Product cases are derived from the checked-in catalog CSV, and condition cases count as relevant when the retrieved catalog text contains the expected use phrase. Product-name relevance comparison normalizes case, spacing, and punctuation. The cases and evaluation code are in the repository, so Allopathy results can be rerun after importing the same catalog and creating the retrieval indexes. Ayurveda data is excluded from Git and has no verified download URL; matching its score requires the same local CSV, the corresponding Ayurveda graph import, and the case IDs in `eval/rag_cases.json`.
+```bash
+.venv/bin/python evaluate_rag.py --latency-repeats 100 --out reports/rag_benchmark/latest.json
+```
 
-Context-field coverage means required context fields were present; source-metadata coverage means source metadata fields were present. Neither means the source is authoritative: the Allopathy source manifest is explicitly marked `incomplete`, and Ayurveda records remain `unverified_preview`. The latency column is a single warmed local run and is sensitive to hardware, database cache, and load; do not treat it as a repeatable performance comparison. This small, catalog-derived retrieval benchmark measures neither answer faithfulness nor medical correctness and does not establish clinical accuracy or production-scale performance.
+Latency is measured after the embedding model is loaded and warmed; it is not a cold-start or production-load benchmark. The number of measured samples is included in the JSON report. Compare retrieval methods by query type because exact product-name lookups are a different task from condition search. The candidate ranking list is exposed in the report, while the current answer-generation path still supplies one medicine context.
+
+`eval/rag_cases.json` currently contains 41 Allopathy and 14 Ayurveda cases. They are exploratory development cases, not a held-out test set; previous retrieval results were inspected while developing this benchmark. Do not describe them as independent generalization results. Expand the reviewed test split after tuning on a separate development set. Ayurveda labels validate record lookup and provenance retention only; the source remains unverified.
+
+Latest local retrieval run (2026-11-24; one warmed run with 100 repeats per Allopathy query, 4,100 latency samples per strategy; generation disabled):
+
+| Query type / strategy | Cases | Hit@5 (95% Wilson CI) | Recall@5 | MRR | nDCG@5 | p50 / p95 latency |
+|---|---:|---:|---:|---:|---:|---:|
+| Named product — Hybrid | 29 | 29/29 (88.3–100%) | 100% | 1.00 | 1.00 | — |
+| Named product — Vector-only | 29 | 25/29 (69.4–94.5%) | 86.2% | 0.77 | 0.79 | — |
+| Catalog condition phrase — Hybrid | 10 | 10/10 (72.2–100%) | 2.2% | 1.00 | 1.00 | — |
+| Catalog condition phrase — Vector-only | 10 | 9/10 (59.6–98.2%) | 1.4% | 0.90 | 0.79 | — |
+| All labeled queries — Hybrid | 39 | 39/39 (91.0–100%) | 74.9% | 1.00 | 1.00 | 21.3 / 55.0 ms |
+| All labeled queries — Vector-only | 39 | 34/39 (73.3–94.4%) | 64.5% | 0.80 | 0.79 | 18.4 / 24.8 ms |
+| Out-of-scope + unknown product — both strategies | 2 | Abstained 0/2 | — | — | — | included above |
+| Ayurveda catalog lookup | 14 | 14/14 | 100% | 1.00 | 1.00 | — |
+
+This small sample does not show a statistically clear difference between the two strategies: their aggregate Hit@5 Wilson intervals overlap. Hybrid’s named-product cases are exact-name lookups, and it returned irrelevant catalog records for both negative queries. The condition metrics measure retrieved catalog rows, not whether a medicine is clinically appropriate for a condition. Ayurveda remains a smoke test. The JSON report is generated locally at `reports/rag_benchmark/latest.json` and is intentionally excluded from Git; rerun the command above to reproduce against your local graph and data.
+
+Ayurveda source provenance was retained for all 14 retrieved records in this run. This checks that source identifiers and import status survived ingestion; it does not validate the source or its claims.
 
 To include answer generation, citations, expected answer terms, abstention cases, and automated safety review flags, use the configured Groq model:
 
 ```bash
-.venv/bin/python evaluate_rag.py --generate --out reports/rag_benchmark/qwen.json
+.venv/bin/python evaluate_rag.py --generate --strategy hybrid --out reports/rag_benchmark/qwen.json
 ```
 
-This sends benchmark prompts and retrieved catalog records to Groq and may incur provider usage. Automated safety flags are review signals, not clinical judgments. Citation presence does not prove a claim is supported. Expand and maintain the expected records through curator review; benchmark scores measure this small dataset-specific set and do not establish clinical accuracy. The lower-level retrieval checks remain available as `.venv/bin/python evaluate_retrieval.py`.
+Generation calls can incur provider usage. The harness reports citation resolution and expected-term coverage, but neither is a claim-level faithfulness metric. Claim-level support and medical correctness require human-reviewed annotations. Automated safety flags are review signals, not clinical judgments. The lower-level graph checks remain available as `.venv/bin/python evaluate_retrieval.py`.
 
 Operational events are appended to `runtime/medgraph_events.jsonl`. The logger records ingestion outcomes, retrieval hits/misses, citation audits, interaction imports, and evaluation scores without storing raw query text or generated answers. Missing dates remain `unknown` rather than being inferred.
 

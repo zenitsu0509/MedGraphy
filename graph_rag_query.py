@@ -328,8 +328,8 @@ class GraphQueryEngine:
         candidates_by_id: dict[str, dict[str, Any]] = {}
 
         if strategy == "vector-only":
-            vector_rows = self.vector_similarity_search(user_query, limit=1)
-            ranked = reciprocal_rank_fusion([("vector", vector_rows, 1.0)], rank_constant=0, limit=1)
+            vector_rows = self.vector_similarity_search(user_query, limit=20)
+            ranked = reciprocal_rank_fusion([("vector", vector_rows, 1.0)], rank_constant=0, limit=20)
             candidates_by_id = {item.get("medicine_id") or item.get("name"): item for item in ranked}
         else:
             # Exact named products should win over semantically similar records.
@@ -371,11 +371,12 @@ class GraphQueryEngine:
                     }
                 }
 
-        if not top_medicine_name and candidates_by_id:
-            winner = sorted(
-                candidates_by_id.values(),
-                key=lambda item: (-item["rrf_score"], (item["name"] or "").casefold()),
-            )[0]
+        ranked_candidates = sorted(
+            candidates_by_id.values(),
+            key=lambda item: (-item["rrf_score"], (item["name"] or "").casefold()),
+        )
+        if not top_medicine_name and ranked_candidates:
+            winner = ranked_candidates[0]
             top_medicine_name = winner["name"]
             top_medicine_id = winner.get("medicine_id")
             retrieval_sources = winner["sources"]
@@ -427,6 +428,7 @@ class GraphQueryEngine:
         return {
             "medicine_found": top_medicine_name,
             "context": context,
+            "ranked_candidates": ranked_candidates,
         }
 
     # ----------------------------

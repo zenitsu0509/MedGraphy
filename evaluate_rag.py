@@ -13,6 +13,7 @@ import json
 import os
 import re
 import statistics
+import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,12 +57,39 @@ def term_matches(answer: str, term: str) -> bool:
     return normalize_key(term) in normalize_key(answer)
 
 
-def expected_name_matches(found_name: str | None, expected_names: list[str]) -> bool:
-    """Compare catalog names after the same whitespace/punctuation normalization as IDs."""
-    if not found_name:
-        return False
-    found_key = normalize_key(found_name)
-    return bool(found_key) and found_key in {normalize_key(name) for name in expected_names if name}
+def rank_metrics(ranked_ids: list[str], expected_ids: set[str], k: int) -> dict[str, float]:
+    """Compute standard ranking metrics using stable catalog medicine IDs."""
+    relevant_ranks = [rank for rank, medicine_id in enumerate(ranked_ids[:k], 1) if medicine_id in expected_ids]
+    dcg = sum(1 / math.log2(rank + 1) for rank in relevant_ranks)
+    ideal_count = min(len(expected_ids), k)
+    idcg = sum(1 / math.log2(rank + 1) for rank in range(1, ideal_count + 1))
+    return {
+        "hit_at_k": float(bool(relevant_ranks)),
+        "recall_at_k": len(set(ranked_ids[:k]) & expected_ids) / len(expected_ids) if expected_ids else 0.0,
+        "mrr": 1 / relevant_ranks[0] if relevant_ranks else 0.0,
+        "ndcg_at_k": dcg / idcg if idcg else 0.0,
+    }
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    values = sorted(values)
+    position = (len(values) - 1) * pct
+    lower = int(position)
+    upper = min(lower + 1, len(values) - 1)
+    return values[lower] + (values[upper] - values[lower]) * (position - lower)
+
+
+def wilson_interval(successes: int, count: int, z: float = 1.96) -> list[float] | None:
+    """95% Wilson interval for a binary rate; descriptive for small samples."""
+    if count == 0:
+        return None
+    rate = successes / count
+    denominator = 1 + z * z / count
+    center = (rate + z * z / (2 * count)) / denominator
+    margin = z * math.sqrt((rate * (1 - rate) / count) + (z * z / (4 * count * count))) / denominator
+    return [max(0.0, center - margin), min(1.0, center + margin)]
 
 
 def evaluate_ayurveda(engine: GraphQueryEngine, case: dict[str, Any], k: int) -> dict[str, Any]:
@@ -83,21 +111,29 @@ def evaluate_ayurveda(engine: GraphQueryEngine, case: dict[str, Any], k: int) ->
     expected = set(case.get("expected_record_ids", []))
     ranks = [index + 1 for index, record_id in enumerate(found_ids) if record_id in expected]
     matched = bool(ranks)
+    recall = len(set(found_ids[:k]) & expected) / len(expected) if expected else 0.0
+    dcg = sum(1 / math.log2(rank + 1) for rank in ranks)
+    ideal = sum(1 / math.log2(rank + 1) for rank in range(1, min(len(expected), k) + 1))
     return {
         "id": case["id"], "mode": "ayurveda", "query": case["query"], "field": field,
         "expected_ids": sorted(expected), "found_ids": found_ids,
         "found_labels": [row["problem"] for row in rows],
-        "top_k_hit": matched, "reciprocal_rank": 1 / min(ranks) if ranks else 0.0,
+        "top_k_hit": matched, "recall_at_k": recall, "reciprocal_rank": 1 / min(ranks) if ranks else 0.0,
+        "ndcg_at_k": dcg / ideal if ideal else 0.0,
         "source_sha256_values": sorted({row.get("source_sha256") for row in rows if row.get("source_sha256")}),
         "provenance_preserved": bool(rows) and all(row["provenance_status"] == "unverified_preview" and row["source_id"] for row in rows),
         "latency_ms": round((time.perf_counter() - started) * 1000, 2),
     }
 
 
-def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate: bool, strategy: str) -> dict[str, Any]:
-    started = time.perf_counter()
-    retrieved = engine.retrieve_context_for_rag(case["query"], strategy=strategy)
-    retrieval_ms = (time.perf_counter() - started) * 1000
+def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate: bool, strategy: str, k: int, latency_repeats: int) -> dict[str, Any]:
+    latency_samples = []
+    retrieved = None
+    for _ in range(max(1, latency_repeats)):
+        started = time.perf_counter()
+        retrieved = engine.retrieve_context_for_rag(case["query"], strategy=strategy)
+        latency_samples.append((time.perf_counter() - started) * 1000)
+    retrieval_ms = latency_samples[0]
     context = (retrieved or {}).get("context") or {}
     name = (retrieved or {}).get("medicine_found")
     expected = set(case.get("expected_medicines", []))
@@ -106,18 +142,33 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
         if normalize_key(phrase) in normalize_key(context.get(field, ""))
     }
     all_facts_matched = len(matched_facts) == len(case.get("expected_context_contains", {}))
-    name_matched = expected_name_matches(name, list(expected))
-    top1_hit = name_matched or (bool(case.get("expected_context_contains")) and all_facts_matched)
+    ranked_candidates = (retrieved or {}).get("ranked_candidates", [])
+    ranked_names = [item.get("name", "") for item in ranked_candidates]
+    expected_ids = set(case.get("expected_medicine_ids", []))
+    if not expected_ids:
+        expected_ids = {normalize_key(name) for name in expected}
+    ranked_ids = [item.get("medicine_id") or normalize_key(item.get("name", "")) for item in ranked_candidates]
+    metrics = rank_metrics(ranked_ids, expected_ids, k)
+    expected_abstention = bool(case.get("expected_no_catalog_match"))
+    query_type = case.get("query_type") or ("condition" if case.get("expected_context_contains") else ("named_product" if expected else "out_of_scope"))
     required_fields = case.get("required_context_fields", [])
     missing_fields = [field for field in required_fields if not context.get(field)]
     result: dict[str, Any] = {
         "id": case["id"], "mode": "allopathy", "query": case["query"],
+        "query_type": query_type, "split": case.get("split", "exploratory"),
         "strategy": strategy,
         "expected_medicines": sorted(expected), "found_medicine": name,
-        "relevance_basis": "expected_medicine_name" if name_matched else ("expected_context_text" if all_facts_matched and case.get("expected_context_contains") else "no_expected_match"),
+        "expected_medicine_ids": sorted(case.get("expected_medicine_ids", [])),
+        "label_source": case.get("label_source", "curator_case_label"),
+        "relevance_basis": "medicine_id" if case.get("expected_medicine_ids") else ("normalized_exact_medicine_name" if expected else "unlabeled"),
         "expected_context_contains": case.get("expected_context_contains", {}),
         "matched_context_facts": matched_facts,
-        "top1_hit": top1_hit, "reciprocal_rank": 1.0 if top1_hit else 0.0,
+        **metrics,
+        "ranked_medicines": ranked_names[:k], "ranked_medicine_ids": ranked_ids[:k],
+        "context_phrase_match": bool(case.get("expected_context_contains")) and all_facts_matched,
+        "expected_catalog_abstention": expected_abstention,
+        "abstention_detected": not bool(retrieved),
+        "false_positive_result": expected_abstention and bool(retrieved),
         "context_fields_missing": missing_fields,
         "context_field_coverage": (len(required_fields) - len(missing_fields)) / len(required_fields) if required_fields else 1.0,
         "source_id": context.get("source_id"),
@@ -126,6 +177,7 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
         "retrieval_sources": context.get("retrieval_sources", []),
         "rrf_score": context.get("retrieval_score"),
         "retrieval_latency_ms": round(retrieval_ms, 2),
+        "retrieval_latency_samples_ms": [round(value, 2) for value in latency_samples],
     }
     if generate and context:
         generation_started = time.perf_counter()
@@ -147,13 +199,19 @@ def evaluate_allopathy(engine: GraphQueryEngine, case: dict[str, Any], generate:
             "citation_audit": citations,
             "answer_term_coverage": len(present) / len(required_terms) if required_terms else None,
             "required_answer_terms_missing": sorted(set(required_terms) - set(present)),
-            "expected_abstention": bool(case.get("expected_abstention")),
-            "abstention_detected": bool(ABSTENTION.search(answer)) if case.get("expected_abstention") else None,
-            "expected_abstention_met": bool(ABSTENTION.search(answer)) if case.get("expected_abstention") else None,
+            "expected_abstention": bool(case.get("expected_abstention") or case.get("expected_no_catalog_match")),
+            "abstention_detected": bool(ABSTENTION.search(answer)) if (case.get("expected_abstention") or case.get("expected_no_catalog_match")) else None,
+            "expected_abstention_met": bool(ABSTENTION.search(answer)) if (case.get("expected_abstention") or case.get("expected_no_catalog_match")) else None,
             "safety_review_flags": safety_flags,
         })
     elif generate:
-        result.update({"answer": None, "citation_audit": audit_citations("", []), "safety_review_flags": []})
+        should_abstain = bool(case.get("expected_abstention") or case.get("expected_no_catalog_match"))
+        result.update({
+            "answer": None, "citation_audit": audit_citations("", []), "safety_review_flags": [],
+            "expected_abstention": should_abstain,
+            "abstention_detected": should_abstain,
+            "expected_abstention_met": should_abstain,
+        })
     return result
 
 
@@ -163,25 +221,59 @@ def summarize(rows: list[dict[str, Any]], generate: bool, k: int) -> dict[str, A
     strategy_comparison = {}
     for strategy in sorted({row["strategy"] for row in allopathy}):
         subset = [row for row in allopathy if row["strategy"] == strategy]
+        by_type = {}
+        for query_type in sorted({row["query_type"] for row in subset}):
+            typed = [row for row in subset if row["query_type"] == query_type]
+            relevance_labeled = [row for row in typed if row["relevance_basis"] != "unlabeled"]
+            abstention_cases = [row for row in typed if row.get("expected_catalog_abstention")]
+            by_type[query_type] = {
+                "case_count": len(typed),
+                "relevance_labeled_cases": len(relevance_labeled),
+                "hit_at_k_95ci_wilson": wilson_interval(sum(row["hit_at_k"] for row in relevance_labeled), len(relevance_labeled)),
+                "hit_at_k": statistics.mean(row["hit_at_k"] for row in relevance_labeled) if relevance_labeled else None,
+                "recall_at_k": statistics.mean(row["recall_at_k"] for row in relevance_labeled) if relevance_labeled else None,
+                "mrr": statistics.mean(row["mrr"] for row in relevance_labeled) if relevance_labeled else None,
+                "ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in relevance_labeled) if relevance_labeled else None,
+                "catalog_abstention_cases": len(abstention_cases),
+                "catalog_abstention_recall": statistics.mean(row["abstention_detected"] for row in abstention_cases) if abstention_cases else None,
+                "false_positive_results": sum(row["false_positive_result"] for row in typed),
+            }
+        latency_samples = [sample for row in subset for sample in row.get("retrieval_latency_samples_ms", [])]
+        expected_match_rows = [row for row in subset if not row.get("expected_catalog_abstention")]
         strategy_comparison[strategy] = {
             "case_count": len(subset),
-            "rag_top1_relevance": statistics.mean(row["top1_hit"] for row in subset) if subset else None,
-            "mean_context_field_coverage": statistics.mean(row["context_field_coverage"] for row in subset) if subset else None,
-            "source_provenance_coverage": statistics.mean(bool(row["source_id"] and row["provenance_status"]) for row in subset) if subset else None,
-            "mean_retrieval_latency_ms": statistics.mean(row["retrieval_latency_ms"] for row in subset) if subset else None,
+            "hit_at_k": statistics.mean(row["hit_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
+            "recall_at_k": statistics.mean(row["recall_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
+            "mrr": statistics.mean(row["mrr"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
+            "ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in subset if row["relevance_basis"] != "unlabeled") if any(row["relevance_basis"] != "unlabeled" for row in subset) else None,
+            "hit_at_k_95ci_wilson": wilson_interval(sum(row["hit_at_k"] for row in subset if row["relevance_basis"] != "unlabeled"), sum(row["relevance_basis"] != "unlabeled" for row in subset)),
+            "query_type_metrics": by_type,
+            "mean_context_field_coverage": statistics.mean(row["context_field_coverage"] for row in expected_match_rows) if expected_match_rows else None,
+            "source_provenance_coverage": statistics.mean(bool(row["source_id"] and row["provenance_status"]) for row in expected_match_rows) if expected_match_rows else None,
+            "latency_sample_count": len(latency_samples),
+            "retrieval_latency_p50_ms": percentile(latency_samples, 0.50),
+            "retrieval_latency_p95_ms": percentile(latency_samples, 0.95),
+            "expected_catalog_abstention_count": sum(row.get("expected_catalog_abstention", False) for row in subset),
+            "catalog_abstention_recall": statistics.mean(row["abstention_detected"] for row in subset if row.get("expected_catalog_abstention")) if any(row.get("expected_catalog_abstention") for row in subset) else None,
+            "false_positive_results": sum(row.get("false_positive_result", False) for row in subset),
         }
     primary = strategy_comparison.get("hybrid") or strategy_comparison.get("vector-only") or {}
     summary: dict[str, Any] = {
         "case_count": len(rows), "k": k,
         "allopathy_case_count": len({row["id"] for row in allopathy}),
         "allopathy_primary_strategy": "hybrid" if "hybrid" in strategy_comparison else ("vector-only" if strategy_comparison else None),
-        "allopathy_rag_top1_relevance": primary.get("rag_top1_relevance"),
+        "allopathy_hit_at_k": primary.get("hit_at_k"),
+        "allopathy_recall_at_k": primary.get("recall_at_k"),
+        "allopathy_mrr": primary.get("mrr"),
+        "allopathy_ndcg_at_k": primary.get("ndcg_at_k"),
         "allopathy_mean_context_field_coverage": primary.get("mean_context_field_coverage"),
         "allopathy_source_provenance_coverage": primary.get("source_provenance_coverage"),
         "allopathy_strategy_comparison": strategy_comparison,
         "ayurveda_case_count": len(ayurveda),
-        "ayurveda_recall_at_k": statistics.mean(row["top_k_hit"] for row in ayurveda) if ayurveda else None,
+        "ayurveda_hit_at_k": statistics.mean(row["top_k_hit"] for row in ayurveda) if ayurveda else None,
+        "ayurveda_recall_at_k": statistics.mean(row["recall_at_k"] for row in ayurveda) if ayurveda else None,
         "ayurveda_mrr": statistics.mean(row["reciprocal_rank"] for row in ayurveda) if ayurveda else None,
+        "ayurveda_ndcg_at_k": statistics.mean(row["ndcg_at_k"] for row in ayurveda) if ayurveda else None,
         "ayurveda_provenance_coverage": statistics.mean(row["provenance_preserved"] for row in ayurveda) if ayurveda else None,
         "generation_enabled": generate,
     }
@@ -201,7 +293,7 @@ def summarize(rows: list[dict[str, Any]], generate: bool, k: int) -> dict[str, A
     return summary
 
 
-def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = False, strategy: str = "compare") -> dict[str, Any]:
+def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = False, strategy: str = "compare", latency_repeats: int = 1) -> dict[str, Any]:
     load_dotenv(ROOT / ".env.local")
     load_dotenv(ROOT / ".env")
     cases = json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
@@ -221,7 +313,7 @@ def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = F
             elif case["mode"] == "allopathy":
                 strategies = ("vector-only", "hybrid") if strategy == "compare" else (strategy,)
                 for selected_strategy in strategies:
-                    rows.append(evaluate_allopathy(engine, case, generate, selected_strategy))
+                    rows.append(evaluate_allopathy(engine, case, generate, selected_strategy, k, latency_repeats))
             else:
                 raise ValueError(f"Unknown benchmark mode: {case['mode']}")
     finally:
@@ -236,13 +328,15 @@ def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = F
             "generation_model": GROQ_MODEL if generate else None,
             "retrieval_k": k,
             "retrieval_strategy": strategy,
+            "latency_repeats_per_query": latency_repeats,
             "groq_key_configured": bool(os.getenv("GROQ_API_KEY")),
         },
         "retrieval_k": k, "summary": summarize(rows, generate, k), "cases": rows,
         "limitations": [
-            "The curated set is small and does not establish clinical accuracy.",
-            "Allopathy RAG retrieves one medicine context per query; its top-1 metric reflects that design.",
-            "Per-query latency excludes embedding-model initialization and warm-up.",
+            "The curated set is exploratory, is not a held-out test split, and does not establish clinical accuracy.",
+            "Allopathy labels use stable medicine IDs; condition IDs are derived from literal phrase matches in the catalog Uses field and remain exploratory labels.",
+            "The Allopathy response uses one context record; ranking metrics reflect the available candidate list and may be degenerate for exact-name lookups.",
+            "Latency is sampled after model warm-up; report sample count and repeat with --latency-repeats 100 for a more stable local p50/p95. This is not a cold-start or production load test.",
             "Ayurveda is benchmarked as catalog retrieval only; its imported text remains unverified.",
             "Citation presence and automated safety flags do not prove that claims are supported or safe.",
         ],
@@ -251,7 +345,7 @@ def evaluate(cases_path: Path, report_path: Path, k: int = 5, generate: bool = F
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
     summary = report["summary"]
     log_event("rag_benchmark_completed", case_count=len(rows), generate=generate, strategy=strategy,
-              allopathy_rag_top1_relevance=summary["allopathy_rag_top1_relevance"],
+              allopathy_hit_at_k=summary["allopathy_hit_at_k"],
               ayurveda_recall_at_k=summary["ayurveda_recall_at_k"], report_path=str(report_path))
     return report
 
@@ -261,14 +355,15 @@ def main() -> None:
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--out", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--k", type=int, default=5, help="Ayurveda retrieval cutoff (Allopathy RAG uses its production top-1 strategy)")
+    parser.add_argument("--latency-repeats", type=int, default=1, help="Measure each Allopathy query this many times after model warm-up")
     parser.add_argument("--generate", action="store_true", help="Call the configured Groq model for Allopathy cases; may incur provider usage")
     parser.add_argument("--strategy", choices=("compare", "hybrid", "vector-only"), default="compare", help="Compare both retrievers, or run one strategy")
     args = parser.parse_args()
-    if args.k < 1:
-        parser.error("--k must be positive")
+    if args.k < 1 or args.latency_repeats < 1:
+        parser.error("--k and --latency-repeats must be positive")
     if args.generate and args.strategy == "compare":
         parser.error("--generate requires --strategy hybrid or --strategy vector-only to avoid duplicate provider calls")
-    report = evaluate(args.cases, args.out, args.k, args.generate, args.strategy)
+    report = evaluate(args.cases, args.out, args.k, args.generate, args.strategy, args.latency_repeats)
     print(json.dumps({"report": str(args.out), "summary": report["summary"]}, ensure_ascii=False, indent=2))
 
 
