@@ -21,7 +21,7 @@ docker compose --env-file .env.local up -d neo4j
 
 If `.venv` does not exist yet, create it with `python3.12 -m venv .venv` first. `.env.local` is ignored by Git.
 
-Local `.env` files are ignored; `.env.local.example` and `.env.aws.example` are configuration templates. The supplied Ayurveda CSV, workbook, and leaf-image folder are also excluded from Git because they are large and their redistribution rights are unverified. Copy those assets into `data/ayurveda/` locally before importing or enabling the botanical images.
+Local `.env` files are ignored; `.env.local.example` and `.env.aws.example` are configuration templates. The Ayurveda text CSV, optional workbook, and leaf-image files are excluded from Git because of their size. The leaf images can be downloaded from [Medicinal Leaf Dataset — Mendeley Data](https://data.mendeley.com/datasets/nnytj2v3n5/1), which lists a CC BY 4.0 license; see [`data/ayurveda/README.md`](data/ayurveda/README.md) for the exact extraction path and attribution note. That Mendeley link is only for the leaf images; the separate Ayurveda text CSV has no verified upstream download URL or license documented in this repository and must be supplied locally at `data/ayurveda/ayurveda_dataset.csv` for ingestion.
 
 To populate a new local Neo4j database with the medicine catalog and vector embeddings:
 

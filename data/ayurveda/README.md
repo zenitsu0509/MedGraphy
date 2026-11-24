@@ -2,7 +2,21 @@
 
 `ayurveda_dataset.csv` is imported into Neo4j as isolated `AyurvedaEntry` records. The rows, claims, scores, and source references remain unverified. `MENTIONS_HERB` means only that the herb string occurs in a row. Do not interpret graph links or the dataset's `Confidence` and `Auth_Score` values as evidence of efficacy or safety.
 
-The raw CSV, workbook, and `Medicinal Leaf Dataset` image directory are intentionally excluded from Git because of their size and source/license review status. To use ingestion or images in a fresh checkout, place the supplied assets at those same paths locally.
+The raw CSV, workbook, and `Medicinal Leaf Dataset` image directory are intentionally excluded from Git because of their size. To use ingestion or images in a fresh checkout, download/place the assets locally as described below.
+
+## Download the leaf images
+
+Download the image collection from [Medicinal Leaf Dataset — Mendeley Data](https://data.mendeley.com/datasets/nnytj2v3n5/1) (version 1, DOI `10.17632/nnytj2v3n5.1`; the landing page lists a CC BY 4.0 license and contributors Roopashree S and Anitha J). Use the page's **Download All** button, extract the archive, and place the class folders under:
+
+```text
+data/ayurveda/Medicinal Leaf Dataset/Segmented Medicinal Leaf Images/
+```
+
+The UI serves leaf references only when an herb name exactly matches a folder's common-name label. Retain the dataset attribution and license notice when redistributing the images.
+
+## Ayurveda text CSV
+
+`ayurveda_dataset.csv` is a separate 10,000-row file; it is **not** provided by the Mendeley leaf-image link above. The repository does not have a verified upstream URL or redistribution license for this CSV. It is excluded from Git. Place the file at `data/ayurveda/ayurveda_dataset.csv` locally before running the audit/import command. The optional workbook is also excluded and is not needed by the importer.
 
 ## Audit snapshot
 
