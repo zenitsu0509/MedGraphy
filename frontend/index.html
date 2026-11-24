@@ -396,6 +396,37 @@
     /* Results & Cards */
     .result { margin-top: 22px; }
 
+    .chat-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .chat-log {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 520px;
+      overflow-y: auto;
+      padding: 2px 4px 6px 2px;
+    }
+    .chat-message { width: min(100%, 900px); }
+    .chat-user {
+      align-self: flex-end;
+      background: var(--primary-light);
+    }
+    .chat-assistant { align-self: flex-start; }
+    .chat-speaker {
+      color: var(--primary-dark);
+      font-size: 0.78rem;
+      font-weight: 750;
+      margin-bottom: 5px;
+    }
+    .chat-message .answer { margin-bottom: 0; }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
@@ -710,14 +741,18 @@
 
       <section id="rag" class="panel">
         <h3 class="section-title">Ask MEDGraphy</h3>
-        <p class="help">Ask about catalog fields. Answers include the retrieved source metadata when available.</p>
+        <p class="help">Ask follow-up questions about catalog fields. Recent context stays in this tab’s memory until you clear the chat or refresh.</p>
         <form id="rag-form">
           <textarea class="control" id="rag-query" rows="3" maxlength="1200" placeholder="Ask about ingredients or listed catalog details" required style="resize:vertical"></textarea>
           <div style="display:flex;justify-content:flex-end;margin-top:12px">
             <button class="primary">Ask question</button>
           </div>
         </form>
-        <div id="rag-results" class="result"></div>
+        <div class="chat-toolbar">
+          <span>Recent chat context is kept in this tab only.</span>
+          <button id="clear-chat" class="secondary" type="button">Clear chat</button>
+        </div>
+        <div id="rag-results" class="result chat-log" aria-live="polite" aria-relevant="additions"></div>
       </section>
     </div>
 
@@ -752,6 +787,25 @@
   <script>
     const $ = id => document.getElementById(id);
     const tabs = [...document.querySelectorAll('.tab')];
+    const chatHistory = [];
+    let activeMedicineId = null;
+
+    function appendChatMessage(role, content) {
+      const target = $('rag-results');
+      const isUser = role === 'user';
+      const card = el('article', '', target, `card chat-message ${isUser ? 'chat-user' : 'chat-assistant'}`);
+      el('div', isUser ? 'You' : 'MEDGraphy', card, 'chat-speaker');
+      el('div', content, card, 'answer');
+      target.scrollTop = target.scrollHeight;
+      return card;
+    }
+
+    $('clear-chat').addEventListener('click', () => {
+      chatHistory.length = 0;
+      activeMedicineId = null;
+      $('rag-results').replaceChildren();
+      $('rag-query').focus();
+    });
 
     function activatePanel(name) {
       tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.panel === name));
@@ -975,14 +1029,24 @@
 
     $('rag-form').addEventListener('submit', async event => {
       event.preventDefault();
-      showMessage('rag-results', 'Retrieving catalog context…', 'loading');
+      const query = $('rag-query').value.trim();
+      if (!query) return;
+      const askButton = $('rag-form').querySelector('button[type="submit"], button:not([type])');
+      askButton.disabled = true;
+      appendChatMessage('user', query);
+      const pending = appendChatMessage('assistant', 'Retrieving catalog context…');
       try {
-        const data = await api('/api/rag', { method: 'POST', body: JSON.stringify({ query: $('rag-query').value }) });
-        const target = $('rag-results');
-        target.replaceChildren();
-        const card = el('article', '', target, 'card');
+        const data = await api('/api/rag', {
+          method: 'POST',
+          body: JSON.stringify({
+            query,
+            conversation_history: chatHistory.slice(-8),
+            medicine_id: activeMedicineId,
+          }),
+        });
+        pending.remove();
+        const card = appendChatMessage('assistant', data.answer);
         if (data.medicine) el('p', 'Retrieved record: ' + data.medicine.name, card, 'muted');
-        el('div', data.answer, card, 'answer');
         (data.sources || []).forEach(source => {
           const box = el('div', `[${source.ref}] ${source.name || 'Unknown source'} · Date: ${source.source_date || 'unknown'} · Freshness: ${source.freshness?.status || 'unknown'}`, card, 'source');
           const href = safeHref(source.url);
@@ -993,8 +1057,16 @@
             link.rel = 'noopener noreferrer';
           } else el('div', 'No source URL is recorded for this catalog.', box, 'warning');
         });
+        chatHistory.push({ role: 'user', content: query }, { role: 'assistant', content: data.answer });
+        if (chatHistory.length > 8) chatHistory.splice(0, chatHistory.length - 8);
+        activeMedicineId = data.medicine?.medicine_id || null;
+        $('rag-query').value = '';
       } catch (error) {
-        showMessage('rag-results', error.message, 'error');
+        pending.remove();
+        appendChatMessage('assistant', error.message).classList.add('error');
+      } finally {
+        askButton.disabled = false;
+        $('rag-query').focus();
       }
     });
 

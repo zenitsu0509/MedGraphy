@@ -311,7 +311,12 @@ class GraphQueryEngine:
                 return t
         return None
 
-    def retrieve_context_for_rag(self, user_query: str, strategy: str = "hybrid") -> dict | None:
+    def retrieve_context_for_rag(
+        self,
+        user_query: str,
+        strategy: str = "hybrid",
+        preferred_medicine_id: str | None = None,
+    ) -> dict | None:
         """Retrieve one catalog record using vector-only or lexical/graph/vector RRF."""
         if strategy not in {"hybrid", "vector-only"}:
             raise ValueError("strategy must be 'hybrid' or 'vector-only'")
@@ -335,6 +340,20 @@ class GraphQueryEngine:
                 retrieval_sources = ["exact_name"]
                 retrieval_score = 1.0
 
+            # Keep follow-up questions anchored to the active medicine from this chat.
+            # An exact product name in the new question always takes precedence.
+            if not top_medicine_name and preferred_medicine_id:
+                preferred_rows = self.db.query("""
+                    MATCH (m:Medicine {medicine_id:$medicine_id})
+                    RETURN m.name AS name, m.medicine_id AS medicine_id
+                    LIMIT 1
+                """, {"medicine_id": preferred_medicine_id}, db="neo4j") or []
+                if preferred_rows:
+                    top_medicine_name = preferred_rows[0]["name"]
+                    top_medicine_id = preferred_rows[0]["medicine_id"]
+                    retrieval_sources = ["conversation_context"]
+                    retrieval_score = 1.0
+
             if not top_medicine_name:
                 rankings = []
                 condition = self._extract_condition_from_query(user_query)
@@ -348,7 +367,7 @@ class GraphQueryEngine:
                 candidates_by_id = {
                     top_medicine_id or top_medicine_name: {
                         "medicine_id": top_medicine_id, "name": top_medicine_name,
-                        "rrf_score": 1.0, "sources": ["exact_name"],
+                        "rrf_score": 1.0, "sources": retrieval_sources,
                     }
                 }
 

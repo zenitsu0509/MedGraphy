@@ -8,7 +8,7 @@ import re
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from dotenv import load_dotenv
@@ -31,8 +31,15 @@ FRONTEND = ROOT / "frontend" / "index.html"
 AYURVEDA_IMAGES = ROOT / "data" / "ayurveda" / "Medicinal Leaf Dataset" / "Segmented Medicinal Leaf Images"
 
 
+class RagHistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=1200)
+
+
 class RagRequest(BaseModel):
     query: str = Field(min_length=1, max_length=1200)
+    conversation_history: list[RagHistoryMessage] = Field(default_factory=list, max_length=8)
+    medicine_id: str | None = Field(default=None, max_length=64)
 
 
 @asynccontextmanager
@@ -345,7 +352,11 @@ def rag(payload: RagRequest, request: Request):
     if not query:
         raise HTTPException(status_code=422, detail="Query cannot be blank")
     try:
-        retrieved = engine.retrieve_context_for_rag(query)
+        history = [message.model_dump() for message in payload.conversation_history[-8:]]
+        retrieved = engine.retrieve_context_for_rag(
+            query,
+            preferred_medicine_id=payload.medicine_id if history else None,
+        )
     except Exception as exc:
         log_event("api_rag_retrieval_failed", error_type=type(exc).__name__)
         raise HTTPException(status_code=503, detail="Retrieval failed") from exc
@@ -355,7 +366,9 @@ def rag(payload: RagRequest, request: Request):
         raise HTTPException(status_code=503, detail="Answer generation is unavailable; configure GROQ_API_KEY")
     context = retrieved["context"]
     try:
-        answer = generate_rag_response(query, context, request.app.state.groq_client)
+        answer = generate_rag_response(
+            query, context, request.app.state.groq_client, conversation_history=history,
+        )
     except Exception as exc:
         log_event("api_rag_generation_failed", error_type=type(exc).__name__)
         raise HTTPException(status_code=502, detail="Answer generation failed") from exc

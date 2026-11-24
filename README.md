@@ -86,7 +86,7 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Interactive API documentati
 | `GET` | `/api/conditions/search?q=...` | Find catalog products with matching condition text, with conservative spelling correction when exact lookup misses |
 | `GET` | `/api/medicines/{medicine_id}/shared-ingredients` | Show ingredient overlaps, explicitly separate from interactions |
 | `GET` | `/api/medicines/{medicine_id}/interactions` | Return only evidence-backed interaction records |
-| `POST` | `/api/rag` | Retrieve catalog context and generate an answer with source metadata |
+| `POST` | `/api/rag` | Retrieve catalog context and generate an answer with source metadata; accepts up to eight recent chat messages and an active medicine ID for follow-up questions |
 | `GET` | `/api/ayurveda/search?q=...` | Search imported Ayurveda graph records in preview mode |
 
 Example RAG request:
